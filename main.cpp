@@ -22,9 +22,13 @@ GLuint program_id;
 // fur parameters
 int shell_count = 32;
 float fur_length = 0.04f;
+float strand_density = 150.0f;
 
 void update_uniforms()
 {
+    glUniform1f(glGetUniformLocation(program_id, "strand_density"),
+                strand_density);
+    TEST_OPENGL_ERROR();
     glUniform1i(glGetUniformLocation(program_id, "shell_count"), shell_count);
     TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(program_id, "fur_length"), fur_length);

@@ -1,15 +1,37 @@
 #version 450
 
+in vec3 v_root;
 in vec3 v_normal;
 in float v_height;
+
+uniform float strand_density;
 
 layout(location = 0) out vec4 output_color;
 
 const vec3 light_dir = normalize(vec3(1.0, 1.5, 0.5));
 const vec3 bunny_color = vec3(0.8, 0.6, 0.4);
 
+// pseudo random number in [0, 1[ for a cell of the grid
+float hash(vec3 cell)
+{
+    return fract(sin(dot(cell, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+}
+
 void main()
 {
+    // the space is cut in a 3D grid, each cell holds one strand
+    vec3 cell = floor(v_root * strand_density);
+    float strand_length = hash(cell);
+
+    // position inside the cell, from -1 to 1
+    vec3 local = fract(v_root * strand_density) * 2.0 - 1.0;
+    // the strand gets thinner toward its tip, and is gone above it
+    float radius = 1.0 - v_height / strand_length;
+
+    // shell 0 is the skin, it is never cut
+    if (v_height > 0.0 && length(local) > radius)
+        discard;
+
     float diffuse = max(dot(normalize(v_normal), light_dir), 0.0);
     // the shells get lighter toward the tip
     vec3 color = bunny_color * mix(0.4, 1.0, v_height);
