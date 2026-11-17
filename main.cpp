@@ -19,6 +19,18 @@
 GLuint bunny_vao_id;
 GLuint program_id;
 
+// fur parameters
+int shell_count = 32;
+float fur_length = 0.04f;
+
+void update_uniforms()
+{
+    glUniform1i(glGetUniformLocation(program_id, "shell_count"), shell_count);
+    TEST_OPENGL_ERROR();
+    glUniform1f(glGetUniformLocation(program_id, "fur_length"), fur_length);
+    TEST_OPENGL_ERROR();
+}
+
 void window_resize(int width, int height)
 {
     // std::cout << "glViewport(0,0,"<< width << "," << height <<
@@ -31,9 +43,12 @@ void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     TEST_OPENGL_ERROR();
+    update_uniforms();
     glBindVertexArray(bunny_vao_id);
     TEST_OPENGL_ERROR();
-    glDrawArrays(GL_TRIANGLES, 0, vertex_buffer_data.size() / 3);
+    // one instance per shell, the vertex shader uses gl_InstanceID
+    glDrawArraysInstanced(GL_TRIANGLES, 0, vertex_buffer_data.size() / 3,
+                          shell_count);
     TEST_OPENGL_ERROR();
     glBindVertexArray(0);
     TEST_OPENGL_ERROR();
