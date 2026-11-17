@@ -33,7 +33,7 @@ void display()
     TEST_OPENGL_ERROR();
     glBindVertexArray(bunny_vao_id);
     TEST_OPENGL_ERROR();
-    glDrawArrays(GL_TRIANGLES, 0, vertex_buffer_data.size());
+    glDrawArrays(GL_TRIANGLES, 0, vertex_buffer_data.size() / 3);
     TEST_OPENGL_ERROR();
     glBindVertexArray(0);
     TEST_OPENGL_ERROR();
@@ -49,7 +49,7 @@ void init_glut(int& argc, char* argv[])
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(1024, 1024);
     glutInitWindowPosition(100, 100);
-    glutCreateWindow("Shader Programming");
+    glutCreateWindow("Fur shell texturing");
     glutDisplayFunc(display);
     glutReshapeFunc(window_resize);
 }
@@ -157,33 +157,25 @@ bool init_shaders()
 {
     std::string vertex_src = load("vertex.shd");
     std::string fragment_src = load("fragment.shd");
-    std::string geometry_src = load("geometry.shd");
-    GLuint shader_id[3];
+    GLuint shader_id[2];
     GLint compile_status = GL_TRUE;
     char* vertex_shd_src =
         (char*)std::malloc(vertex_src.length() * sizeof(char));
     char* fragment_shd_src =
         (char*)std::malloc(fragment_src.length() * sizeof(char));
-    char* geometry_shd_src =
-        (char*)std::malloc(geometry_src.length() * sizeof(char));
     vertex_src.copy(vertex_shd_src, vertex_src.length());
     fragment_src.copy(fragment_shd_src, fragment_src.length());
-    geometry_src.copy(geometry_shd_src, geometry_src.length());
 
     shader_id[0] = glCreateShader(GL_VERTEX_SHADER);
     TEST_OPENGL_ERROR();
     shader_id[1] = glCreateShader(GL_FRAGMENT_SHADER);
-    TEST_OPENGL_ERROR();
-    shader_id[2] = glCreateShader(GL_GEOMETRY_SHADER);
     TEST_OPENGL_ERROR();
 
     glShaderSource(shader_id[0], 1, (const GLchar**)&(vertex_shd_src), 0);
     TEST_OPENGL_ERROR();
     glShaderSource(shader_id[1], 1, (const GLchar**)&(fragment_shd_src), 0);
     TEST_OPENGL_ERROR();
-    glShaderSource(shader_id[2], 1, (const GLchar**)&(geometry_shd_src), 0);
-    TEST_OPENGL_ERROR();
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 2; i++)
     {
         glCompileShader(shader_id[i]);
         TEST_OPENGL_ERROR();
@@ -204,23 +196,20 @@ bool init_shaders()
             }
             std::free(vertex_shd_src);
             std::free(fragment_shd_src);
-            std::free(geometry_shd_src);
             glDeleteShader(shader_id[0]);
             glDeleteShader(shader_id[1]);
-            glDeleteShader(shader_id[2]);
             return false;
         }
     }
     std::free(vertex_shd_src);
     std::free(fragment_shd_src);
-    std::free(geometry_shd_src);
 
     GLint link_status = GL_TRUE;
     program_id = glCreateProgram();
     TEST_OPENGL_ERROR();
     if (program_id == 0)
         return false;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 2; i++)
     {
         glAttachShader(program_id, shader_id[i]);
         TEST_OPENGL_ERROR();
@@ -246,8 +235,6 @@ bool init_shaders()
         glDeleteShader(shader_id[0]);
         TEST_OPENGL_ERROR();
         glDeleteShader(shader_id[1]);
-        TEST_OPENGL_ERROR();
-        glDeleteShader(shader_id[2]);
         TEST_OPENGL_ERROR();
         program_id = 0;
         return false;
