@@ -24,8 +24,12 @@ int shell_count = 32;
 float fur_length = 0.04f;
 float strand_density = 150.0f;
 
+float anim_time = 0.0f;
+
 void update_uniforms()
 {
+    glUniform1f(glGetUniformLocation(program_id, "anim_time"), anim_time);
+    TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(program_id, "strand_density"),
                 strand_density);
     TEST_OPENGL_ERROR();
@@ -59,6 +63,33 @@ void display()
     glutSwapBuffers();
 }
 
+void timer(int)
+{
+    anim_time += 0.033f;
+    glutPostRedisplay();
+    glutTimerFunc(33, timer, 0);
+}
+
+void keyboard(unsigned char key, int, int)
+{
+    if (key == '+')
+        shell_count++;
+    else if (key == '-' && shell_count > 2)
+        shell_count--;
+    else if (key == 'L')
+        fur_length *= 1.1f;
+    else if (key == 'l')
+        fur_length /= 1.1f;
+    else if (key == 'D')
+        strand_density *= 1.1f;
+    else if (key == 'd')
+        strand_density /= 1.1f;
+    else
+        return;
+    std::cout << "shells: " << shell_count << ", length: " << fur_length
+              << ", density: " << strand_density << std::endl;
+}
+
 void init_glut(int& argc, char* argv[])
 {
     // glewExperimental = GL_TRUE;
@@ -71,6 +102,8 @@ void init_glut(int& argc, char* argv[])
     glutCreateWindow("Fur shell texturing");
     glutDisplayFunc(display);
     glutReshapeFunc(window_resize);
+    glutKeyboardFunc(keyboard);
+    glutTimerFunc(33, timer, 0);
 }
 
 bool init_glew()
