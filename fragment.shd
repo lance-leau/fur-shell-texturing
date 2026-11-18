@@ -1,6 +1,7 @@
 #version 450
 
 in vec3 v_root;
+in vec3 v_skin_normal;
 in vec3 v_normal;
 in float v_height;
 
@@ -17,19 +18,36 @@ float hash(vec3 cell)
     return fract(sin(dot(cell, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 }
 
+// 2D coordinates on the skin: the root is projected on the plane (yz, xz or
+// xy) that faces the normal the most. The z of the result tells which plane.
+vec3 skin_coordinates()
+{
+    vec3 n = abs(v_skin_normal);
+    if (n.x > n.y && n.x > n.z)
+        return vec3(v_root.yz, 0.0);
+    if (n.y > n.z)
+        return vec3(v_root.xz, 1.0);
+    return vec3(v_root.xy, 2.0);
+}
+
 void main()
 {
-    // the space is cut in a 3D grid, each cell holds one strand
-    vec3 cell = floor(v_root * strand_density);
-    float strand_length = hash(cell);
+    // the skin is cut in a 2D grid, each cell holds one strand
+    vec3 coord = skin_coordinates();
+    vec2 p = coord.xy * strand_density;
+    vec3 cell = vec3(floor(p), coord.z);
 
-    // position inside the cell, from -1 to 1
-    vec3 local = fract(v_root * strand_density) * 2.0 - 1.0;
+    // position inside the cell, from -0.5 to 0.5
+    vec2 local = fract(p) - 0.5;
+    // the strand is not exactly at the center of its cell
+    vec2 center = (vec2(hash(cell), hash(cell + 7.0)) - 0.5) * 0.3;
+    float strand_length = hash(cell + 13.0);
+
     // the strand gets thinner toward its tip, and is gone above it
-    float radius = 1.0 - v_height / strand_length;
+    float radius = 0.35 * (1.0 - v_height / strand_length);
 
     // shell 0 is the skin, it is never cut
-    if (v_height > 0.0 && length(local) > radius)
+    if (v_height > 0.0 && length(local - center) > radius)
         discard;
 
     float diffuse = max(dot(normalize(v_normal), light_dir), 0.0);

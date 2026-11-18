@@ -8,6 +8,7 @@ uniform int shell_count;
 uniform float fur_length;
 
 out vec3 v_root;
+out vec3 v_skin_normal;
 out vec3 v_normal;
 out float v_height;
 
@@ -40,6 +41,7 @@ void main()
 
     // position on the skin, so every shell sees the same strands
     v_root = position;
+    v_skin_normal = normalSmooth;
     // the light does not turn with the bunny
     v_normal = mat3(model) * normalSmooth;
     v_height = h;
