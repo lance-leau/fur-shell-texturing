@@ -45,7 +45,6 @@ void main()
 
     // the strand gets thinner toward its tip, and is gone above it
     float radius = 0.35 * (1.0 - v_height / strand_length);
-
     // shell 0 is the skin, it is never cut
     if (v_height > 0.0 && length(local - center) > radius)
         discard;

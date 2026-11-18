@@ -39,16 +39,81 @@ void update_uniforms()
     TEST_OPENGL_ERROR();
 }
 
+// the scene is drawn in a multisample FBO (the window has no multisampling),
+// then copied to the window
+int msaa_samples = 8;
+int window_width = 1024;
+int window_height = 1024;
+GLuint msaa_fbo_id;
+GLuint msaa_color_rb;
+GLuint msaa_depth_rb;
+
+void resize_msaa_buffers()
+{
+    glBindRenderbuffer(GL_RENDERBUFFER, msaa_color_rb);
+    TEST_OPENGL_ERROR();
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples, GL_RGBA8,
+                                     window_width, window_height);
+    TEST_OPENGL_ERROR();
+    glBindRenderbuffer(GL_RENDERBUFFER, msaa_depth_rb);
+    TEST_OPENGL_ERROR();
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples,
+                                     GL_DEPTH_COMPONENT24, window_width,
+                                     window_height);
+    TEST_OPENGL_ERROR();
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+}
+
+bool init_msaa_fbo()
+{
+    GLint max_samples;
+    glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+    TEST_OPENGL_ERROR();
+    if (msaa_samples > max_samples)
+        msaa_samples = max_samples;
+    std::cout << "MSAA samples: " << msaa_samples << std::endl;
+
+    glGenRenderbuffers(1, &msaa_color_rb);
+    TEST_OPENGL_ERROR();
+    glGenRenderbuffers(1, &msaa_depth_rb);
+    TEST_OPENGL_ERROR();
+    resize_msaa_buffers();
+
+    glGenFramebuffers(1, &msaa_fbo_id);
+    TEST_OPENGL_ERROR();
+    glBindFramebuffer(GL_FRAMEBUFFER, msaa_fbo_id);
+    TEST_OPENGL_ERROR();
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                              GL_RENDERBUFFER, msaa_color_rb);
+    TEST_OPENGL_ERROR();
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, msaa_depth_rb);
+    TEST_OPENGL_ERROR();
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "FBO incomplete: 0x" << std::hex << status << std::dec
+                  << std::endl;
+        return false;
+    }
+    return true;
+}
+
 void window_resize(int width, int height)
 {
-    // std::cout << "glViewport(0,0,"<< width << "," << height <<
-    // ");TEST_OPENGL_ERROR();" << std::endl;
+    window_width = width;
+    window_height = height;
+    resize_msaa_buffers();
     glViewport(0, 0, width, height);
     TEST_OPENGL_ERROR();
 }
 
 void display()
 {
+    glBindFramebuffer(GL_FRAMEBUFFER, msaa_fbo_id);
+    TEST_OPENGL_ERROR();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     TEST_OPENGL_ERROR();
     update_uniforms();
@@ -59,6 +124,17 @@ void display()
                           shell_count);
     TEST_OPENGL_ERROR();
     glBindVertexArray(0);
+    TEST_OPENGL_ERROR();
+
+    // the blit averages the samples of each pixel
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, msaa_fbo_id);
+    TEST_OPENGL_ERROR();
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    TEST_OPENGL_ERROR();
+    glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width,
+                      window_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    TEST_OPENGL_ERROR();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     TEST_OPENGL_ERROR();
     glutSwapBuffers();
 }
@@ -125,6 +201,12 @@ void init_GL()
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     TEST_OPENGL_ERROR();
     glEnable(GL_CULL_FACE);
+    TEST_OPENGL_ERROR();
+    // the fragment shader runs once per sample (not once per pixel), so the
+    // discard of the strands is done per sample: smooth strand edges
+    glEnable(GL_SAMPLE_SHADING);
+    TEST_OPENGL_ERROR();
+    glMinSampleShading(1.0f);
     TEST_OPENGL_ERROR();
     glClearColor(0.4, 0.4, 0.4, 1.0);
     TEST_OPENGL_ERROR();
@@ -302,6 +384,8 @@ int main(int argc, char* argv[])
     if (!init_glew())
         std::exit(-1);
     init_GL();
+    if (!init_msaa_fbo())
+        std::exit(-1);
     init_shaders();
     init_object_vbo();
     glutMainLoop();
