@@ -2,8 +2,10 @@
 #include <GL/glew.h> // glew doit etre tout en haut
 // clang-format on
 #include <GL/freeglut.h>
+#include <array>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <vector>
 
 #include "bunny.hh"
@@ -18,6 +20,40 @@
 
 GLuint bunny_vao_id;
 GLuint program_id;
+
+// the bunny is a triangle soup: a vertex is repeated in every triangle that
+// uses it. The identical vertices are merged and drawn with an index buffer,
+// so the vertex shader runs about 6 times less.
+std::vector<GLfloat> bunny_positions;
+std::vector<GLfloat> bunny_normals;
+std::vector<GLuint> bunny_indices;
+
+void index_bunny()
+{
+    std::map<std::array<GLfloat, 6>, GLuint> vertex_index;
+    for (size_t i = 0; i < vertex_buffer_data.size(); i += 3)
+    {
+        std::array<GLfloat, 6> vertex = { vertex_buffer_data[i],
+                                          vertex_buffer_data[i + 1],
+                                          vertex_buffer_data[i + 2],
+                                          normal_smooth_buffer_data[i],
+                                          normal_smooth_buffer_data[i + 1],
+                                          normal_smooth_buffer_data[i + 2] };
+        GLuint new_index = bunny_positions.size() / 3;
+        // insert does nothing if the vertex is already known
+        auto result = vertex_index.insert({ vertex, new_index });
+        bunny_indices.push_back(result.first->second);
+        if (result.second)
+        {
+            bunny_positions.insert(bunny_positions.end(), vertex.begin(),
+                                   vertex.begin() + 3);
+            bunny_normals.insert(bunny_normals.end(), vertex.begin() + 3,
+                                 vertex.end());
+        }
+    }
+    std::cout << "bunny: " << bunny_indices.size() << " vertices, "
+              << bunny_positions.size() / 3 << " unique" << std::endl;
+}
 
 // fur parameters
 int shell_count = 64;
@@ -129,8 +165,8 @@ void display()
     glBeginQuery(GL_TIME_ELAPSED, gpu_time_query);
     TEST_OPENGL_ERROR();
     // one instance per shell, the vertex shader uses gl_InstanceID
-    glDrawArraysInstanced(GL_TRIANGLES, 0, vertex_buffer_data.size() / 3,
-                          shell_count);
+    glDrawElementsInstanced(GL_TRIANGLES, bunny_indices.size(), GL_UNSIGNED_INT,
+                            0, shell_count);
     TEST_OPENGL_ERROR();
     glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
@@ -271,8 +307,8 @@ void init_object_vbo()
     {
         glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[index_vbo++]);
         TEST_OPENGL_ERROR();
-        glBufferData(GL_ARRAY_BUFFER, vertex_buffer_data.size() * sizeof(float),
-                     vertex_buffer_data.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, bunny_positions.size() * sizeof(float),
+                     bunny_positions.data(), GL_STATIC_DRAW);
         TEST_OPENGL_ERROR();
         glVertexAttribPointer(vertex_location, 3, GL_FLOAT, GL_FALSE, 0, 0);
         TEST_OPENGL_ERROR();
@@ -284,9 +320,8 @@ void init_object_vbo()
     {
         glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[index_vbo++]);
         TEST_OPENGL_ERROR();
-        glBufferData(GL_ARRAY_BUFFER,
-                     normal_smooth_buffer_data.size() * sizeof(float),
-                     normal_smooth_buffer_data.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, bunny_normals.size() * sizeof(float),
+                     bunny_normals.data(), GL_STATIC_DRAW);
         TEST_OPENGL_ERROR();
         glVertexAttribPointer(normal_smooth_location, 3, GL_FLOAT, GL_FALSE, 0,
                               0);
@@ -294,6 +329,16 @@ void init_object_vbo()
         glEnableVertexAttribArray(normal_smooth_location);
         TEST_OPENGL_ERROR();
     }
+
+    // the index buffer is remembered by the VAO
+    GLuint index_buffer_id;
+    glGenBuffers(1, &index_buffer_id);
+    TEST_OPENGL_ERROR();
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_id);
+    TEST_OPENGL_ERROR();
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, bunny_indices.size() * sizeof(GLuint),
+                 bunny_indices.data(), GL_STATIC_DRAW);
+    TEST_OPENGL_ERROR();
 
     glBindVertexArray(0);
 }
@@ -418,6 +463,7 @@ int main(int argc, char* argv[])
         std::exit(-1);
     init_shaders();
     glGenQueries(1, &gpu_time_query);
+    index_bunny();
     init_object_vbo();
     glutMainLoop();
 }
