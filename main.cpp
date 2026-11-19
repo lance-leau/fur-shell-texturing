@@ -20,9 +20,9 @@ GLuint bunny_vao_id;
 GLuint program_id;
 
 // fur parameters
-int shell_count = 32;
-float fur_length = 0.04f;
-float strand_density = 150.0f;
+int shell_count = 64;
+float fur_length = 0.05f;
+float strand_density = 250.0f;
 
 float anim_time = 0.0f;
 
@@ -208,7 +208,7 @@ void init_GL()
     TEST_OPENGL_ERROR();
     glMinSampleShading(1.0f);
     TEST_OPENGL_ERROR();
-    glClearColor(0.4, 0.4, 0.4, 1.0);
+    glClearColor(0.15, 0.16, 0.18, 1.0);
     TEST_OPENGL_ERROR();
 }
 

@@ -12,12 +12,15 @@ out vec3 v_skin_normal;
 out vec3 v_normal;
 out float v_height;
 
+const float gravity = 0.6;
+
 mat4 model_view_matrix = mat4(0.57735, -0.33333, 0.57735, 0.00000, 0.00000,
                               0.66667, 0.57735, 0.00000, -0.57735, -0.33333,
                               0.57735, 0.00000, 0.00000, 0.00000, -17, 1.00000);
 
+// zoomed in compared to the TP (24 instead of 15) to see the fur
 mat4 projection_matrix = mat4(
-    15.00000, 0.00000, 0.00000, 0.00000, 0.00000, 15.00000, 0.00000, 0.00000,
+    24.00000, 0.00000, 0.00000, 0.00000, 0.00000, 24.00000, 0.00000, 0.00000,
     0.00000, 0.00000, -1.00020, -1.00000, 0.00000, 0.00000, -10.00100, 0.00000);
 
 // the bunny turns around the y axis, then it is moved down to be centered
@@ -35,6 +38,8 @@ void main()
     // height of the shell: 0 on the skin, 1 at the tip of the fur
     float h = float(gl_InstanceID) / float(max(shell_count - 1, 1));
     vec3 p = position + normalSmooth * fur_length * h;
+    // the strands bend down, more and more toward the tip
+    p.y -= gravity * fur_length * h * h;
 
     mat4 model = model_matrix();
     gl_Position = projection_matrix * model_view_matrix * model * vec4(p, 1.0);
