@@ -39,6 +39,9 @@ void main()
     // the skin is cut in a 2D grid, each cell holds one strand
     vec3 coord = skin_coordinates();
     vec2 p = coord.xy * strand_density;
+    // every other row is shifted by half a cell (like bricks), so the
+    // strands are not aligned in columns
+    p.x += 0.5 * mod(floor(p.y), 2.0);
     vec3 cell = vec3(floor(p), coord.z);
 
     // position inside the cell, from -0.5 to 0.5
@@ -50,6 +53,9 @@ void main()
 
     // position along the strand: 0 at the root, 1 at the tip
     float t = v_height / strand_length;
+    // each strand leans in its own random direction
+    vec2 lean = (vec2(hash(cell + 41.0), hash(cell + 43.0)) - 0.5) * 0.5;
+    center += t * lean;
     // the strand stays thick and only gets thin near its tip
     float radius = 0.4 * sqrt(max(1.0 - t, 0.0));
 
