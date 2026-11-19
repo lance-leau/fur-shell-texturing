@@ -26,6 +26,12 @@ float strand_density = 250.0f;
 
 float anim_time = 0.0f;
 
+// FPS counter and GPU time of the fur draw call, printed every second
+int frame_count = 0;
+int fps_start_time = 0;
+GLuint gpu_time_query;
+double gpu_time_ms = 0.0;
+
 void update_uniforms()
 {
     glUniform1f(glGetUniformLocation(program_id, "anim_time"), anim_time);
@@ -119,9 +125,14 @@ void display()
     update_uniforms();
     glBindVertexArray(bunny_vao_id);
     TEST_OPENGL_ERROR();
+    // the GPU measures how long the draw call takes on its side
+    glBeginQuery(GL_TIME_ELAPSED, gpu_time_query);
+    TEST_OPENGL_ERROR();
     // one instance per shell, the vertex shader uses gl_InstanceID
     glDrawArraysInstanced(GL_TRIANGLES, 0, vertex_buffer_data.size() / 3,
                           shell_count);
+    TEST_OPENGL_ERROR();
+    glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
     glBindVertexArray(0);
     TEST_OPENGL_ERROR();
@@ -137,13 +148,31 @@ void display()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     TEST_OPENGL_ERROR();
     glutSwapBuffers();
+
+    // waits for the GPU to finish the draw call (simple, but it syncs)
+    GLuint64 elapsed_ns;
+    glGetQueryObjectui64v(gpu_time_query, GL_QUERY_RESULT, &elapsed_ns);
+    TEST_OPENGL_ERROR();
+    gpu_time_ms += elapsed_ns / 1e6;
+    frame_count++;
 }
 
-void timer(int)
+void idle()
 {
-    anim_time += 0.033f;
+    // the animation follows the real time, whatever the FPS
+    int now = glutGet(GLUT_ELAPSED_TIME);
+    anim_time = now / 1000.0f;
+
+    if (now - fps_start_time >= 1000)
+    {
+        std::cout << "FPS: " << frame_count
+                  << ", fur draw: " << gpu_time_ms / frame_count << " ms"
+                  << std::endl;
+        frame_count = 0;
+        gpu_time_ms = 0.0;
+        fps_start_time = now;
+    }
     glutPostRedisplay();
-    glutTimerFunc(33, timer, 0);
 }
 
 void keyboard(unsigned char key, int, int)
@@ -179,7 +208,7 @@ void init_glut(int& argc, char* argv[])
     glutDisplayFunc(display);
     glutReshapeFunc(window_resize);
     glutKeyboardFunc(keyboard);
-    glutTimerFunc(33, timer, 0);
+    glutIdleFunc(idle);
 }
 
 bool init_glew()
@@ -194,6 +223,7 @@ bool init_glew()
 
 void init_GL()
 {
+    std::cout << "GPU: " << glGetString(GL_RENDERER) << std::endl;
     glPointSize(0.1f);
     TEST_OPENGL_ERROR();
     glEnable(GL_DEPTH_TEST);
@@ -387,6 +417,7 @@ int main(int argc, char* argv[])
     if (!init_msaa_fbo())
         std::exit(-1);
     init_shaders();
+    glGenQueries(1, &gpu_time_query);
     init_object_vbo();
     glutMainLoop();
 }
