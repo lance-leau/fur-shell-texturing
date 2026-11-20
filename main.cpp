@@ -278,95 +278,47 @@ std::string load(const std::string& filename)
     return file_content;
 }
 
-bool init_shaders()
+// compiles one shader and prints its errors
+GLuint compile_shader(GLenum type, const std::string& filename)
 {
-    std::string vertex_src = load("vertex.shd");
-    std::string fragment_src = load("fragment.shd");
-    GLuint shader_id[2];
-    GLint compile_status = GL_TRUE;
-    char* vertex_shd_src =
-        (char*)std::malloc(vertex_src.length() * sizeof(char));
-    char* fragment_shd_src =
-        (char*)std::malloc(fragment_src.length() * sizeof(char));
-    vertex_src.copy(vertex_shd_src, vertex_src.length());
-    fragment_src.copy(fragment_shd_src, fragment_src.length());
-
-    shader_id[0] = glCreateShader(GL_VERTEX_SHADER);
+    std::string source = load(filename);
+    const char* source_ptr = source.c_str();
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &source_ptr, 0);
+    glCompileShader(shader);
     TEST_OPENGL_ERROR();
-    shader_id[1] = glCreateShader(GL_FRAGMENT_SHADER);
-    TEST_OPENGL_ERROR();
-
-    glShaderSource(shader_id[0], 1, (const GLchar**)&(vertex_shd_src), 0);
-    TEST_OPENGL_ERROR();
-    glShaderSource(shader_id[1], 1, (const GLchar**)&(fragment_shd_src), 0);
-    TEST_OPENGL_ERROR();
-    for (int i = 0; i < 2; i++)
+    GLint status;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    if (status != GL_TRUE)
     {
-        glCompileShader(shader_id[i]);
-        TEST_OPENGL_ERROR();
-        glGetShaderiv(shader_id[i], GL_COMPILE_STATUS, &compile_status);
-        if (compile_status != GL_TRUE)
-        {
-            GLint log_size;
-            char* shader_log;
-            glGetShaderiv(shader_id[i], GL_INFO_LOG_LENGTH, &log_size);
-            shader_log = (char*)std::malloc(
-                log_size + 1); /* +1 pour le caractere de fin de chaine '\0' */
-            if (shader_log != 0)
-            {
-                glGetShaderInfoLog(shader_id[i], log_size, &log_size,
-                                   shader_log);
-                std::cerr << "SHADER " << i << ": " << shader_log << std::endl;
-                std::free(shader_log);
-            }
-            std::free(vertex_shd_src);
-            std::free(fragment_shd_src);
-            glDeleteShader(shader_id[0]);
-            glDeleteShader(shader_id[1]);
-            return false;
-        }
+        char log[4096];
+        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+        std::cerr << filename << ": " << log << std::endl;
     }
-    std::free(vertex_shd_src);
-    std::free(fragment_shd_src);
+    return shader;
+}
 
-    GLint link_status = GL_TRUE;
-    program_id = glCreateProgram();
+// links a program from a vertex shader, an optional geometry shader (empty
+// name for none) and a fragment shader
+GLuint create_program(const std::string& vertex, const std::string& geometry,
+                      const std::string& fragment)
+{
+    GLuint program = glCreateProgram();
+    glAttachShader(program, compile_shader(GL_VERTEX_SHADER, vertex));
+    if (!geometry.empty())
+        glAttachShader(program, compile_shader(GL_GEOMETRY_SHADER, geometry));
+    glAttachShader(program, compile_shader(GL_FRAGMENT_SHADER, fragment));
+    glLinkProgram(program);
     TEST_OPENGL_ERROR();
-    if (program_id == 0)
-        return false;
-    for (int i = 0; i < 2; i++)
+    GLint status;
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    if (status != GL_TRUE)
     {
-        glAttachShader(program_id, shader_id[i]);
-        TEST_OPENGL_ERROR();
+        char log[4096];
+        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+        std::cerr << "link: " << log << std::endl;
     }
-    glLinkProgram(program_id);
-    TEST_OPENGL_ERROR();
-    glGetProgramiv(program_id, GL_LINK_STATUS, &link_status);
-    if (link_status != GL_TRUE)
-    {
-        GLint log_size;
-        char* program_log;
-        glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &log_size);
-        program_log = (char*)std::malloc(
-            log_size + 1); /* +1 pour le caractere de fin de chaine '\0' */
-        if (program_log != 0)
-        {
-            glGetProgramInfoLog(program_id, log_size, &log_size, program_log);
-            std::cerr << "Program " << program_log << std::endl;
-            std::free(program_log);
-        }
-        glDeleteProgram(program_id);
-        TEST_OPENGL_ERROR();
-        glDeleteShader(shader_id[0]);
-        TEST_OPENGL_ERROR();
-        glDeleteShader(shader_id[1]);
-        TEST_OPENGL_ERROR();
-        program_id = 0;
-        return false;
-    }
-    glUseProgram(program_id);
-    TEST_OPENGL_ERROR();
-    return true;
+    return program;
 }
 
 int main(int argc, char* argv[])
@@ -375,7 +327,8 @@ int main(int argc, char* argv[])
     if (!init_glew())
         std::exit(-1);
     init_GL();
-    init_shaders();
+    program_id = create_program("vertex.shd", "", "fragment.shd");
+    glUseProgram(program_id);
     glGenQueries(1, &gpu_time_query);
     index_bunny();
     init_object_vbo();
