@@ -24,20 +24,35 @@ float hash(vec3 cell)
 
 // 2D coordinates on the skin: the root is projected on the plane (yz, xz or
 // xy) that faces the normal the most. The z of the result tells which plane.
-vec3 skin_coordinates()
+// slope: the normal projected on this plane (its length is sin(tilt))
+// cos_tilt: cosine of the angle between the normal and the axis of the plane
+vec3 skin_coordinates(out vec2 slope, out float cos_tilt)
 {
-    vec3 n = abs(v_skin_normal);
-    if (n.x > n.y && n.x > n.z)
+    vec3 n = normalize(v_skin_normal);
+    vec3 a = abs(n);
+    if (a.x > a.y && a.x > a.z)
+    {
+        slope = n.yz;
+        cos_tilt = a.x;
         return vec3(v_root.yz, 0.0);
-    if (n.y > n.z)
+    }
+    if (a.y > a.z)
+    {
+        slope = n.xz;
+        cos_tilt = a.y;
         return vec3(v_root.xz, 1.0);
+    }
+    slope = n.xy;
+    cos_tilt = a.z;
     return vec3(v_root.xy, 2.0);
 }
 
 void main()
 {
     // the skin is cut in a 2D grid, each cell holds one strand
-    vec3 coord = skin_coordinates();
+    vec2 slope;
+    float cos_tilt;
+    vec3 coord = skin_coordinates(slope, cos_tilt);
     vec2 p = coord.xy * strand_density;
     // every other row is shifted by half a cell (like bricks), so the
     // strands are not aligned in columns
@@ -59,8 +74,16 @@ void main()
     // the strand stays thick and only gets thin near its tip
     float radius = 0.4 * sqrt(max(1.0 - t, 0.0));
 
+    // where the skin is tilted compared to the plane of the grid, a circle
+    // drawn on the plane becomes an ellipse on the skin, stretched by
+    // 1 / cos_tilt along the slope. The offset is stretched the same way so
+    // the strand is round on the skin. (1 / cos - 1) / sin^2 simplifies to
+    // 1 / (cos * (1 + cos)), which never divides by 0.
+    vec2 offset = local - center;
+    offset += dot(offset, slope) * slope / (cos_tilt * (1.0 + cos_tilt));
+
     // shell 0 is the skin, it is never cut
-    if (v_height > 0.0 && length(local - center) > radius)
+    if (v_height > 0.0 && length(offset) > radius)
         discard;
 
     vec3 n = normalize(v_normal);
