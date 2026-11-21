@@ -60,17 +60,17 @@ void load_bunny()
               << mesh_positions.size() / 3 << " unique" << std::endl;
 }
 
-// a sphere of the size of the bunny (center (0, 0.5, 0), radius 0.4): a
-// vertex on each pole and rings of vertices in between. The last vertex of a
+// a sphere centered like the bunny (center (0, 0.5, 0)): a vertex on each
+// pole and rings of vertices in between. The last vertex of a
 // ring is linked to the first one (no copy on the seam), so the mesh is
 // closed: every edge has 2 triangles, as the fins need.
-void make_sphere(int rings, int segments)
+void make_sphere(int rings, int segments, float radius)
 {
     const float pi = 3.14159265f;
     // direction from the center, which is also the normal
-    auto add_vertex = [](float x, float y, float z) {
+    auto add_vertex = [radius](float x, float y, float z) {
         mesh_positions.insert(mesh_positions.end(),
-                              { 0.4f * x, 0.5f + 0.4f * y, 0.4f * z });
+                              { radius * x, 0.5f + radius * y, radius * z });
         mesh_normals.insert(mesh_normals.end(), { x, y, z });
     };
     auto add_triangle = [](GLuint a, GLuint b, GLuint c) {
@@ -443,7 +443,15 @@ int main(int argc, char* argv[])
         if (std::string(argv[i]) == "--ball")
             ball = true;
     if (ball)
-        make_sphere(64, 128);
+    {
+        // a small ball with long fur: mostly a clump of strands
+        make_sphere(64, 128, 0.12f);
+        fur_length = 0.28f;
+        shell_count = 128;
+        // more strands, so they are thinner: long strands on a small ball
+        // get wider toward the tip (the shells are bigger than the skin)
+        strand_density = 400.0f;
+    }
     else
         load_bunny();
     find_edges();
