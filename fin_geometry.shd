@@ -1,0 +1,68 @@
+#version 450
+
+// one edge of the bunny with its 2 triangles: 0 = opposite vertex of the 1st
+// triangle, 1 and 2 = the edge, 3 = opposite vertex of the 2nd triangle
+layout(lines_adjacency) in;
+// a fin is a quad: a strip of 2 triangles
+layout(triangle_strip, max_vertices = 4) out;
+
+in vec3 v_world[];
+in vec3 v_normal[];
+in vec4 v_tip[];
+
+uniform float strand_density;
+
+out vec2 f_coord; // x: along the edge (1 unit = 1 strand), y: height 0 to 1
+out vec3 f_normal;
+out float f_fade;
+
+// the camera position in world space (from the model view matrix)
+const vec3 eye = vec3(9.815, 9.815, 9.815);
+// edges close to the silhouette get a fin too, so the fins do not pop
+const float silhouette_margin = 0.2;
+
+// normal of the triangle (a, b, c), on the same side as the normal n
+vec3 triangle_normal(vec3 a, vec3 b, vec3 c, vec3 n)
+{
+    vec3 normal = normalize(cross(b - a, c - a));
+    return dot(normal, n) < 0.0 ? -normal : normal;
+}
+
+void emit(vec4 position, vec2 coord, vec3 normal, float fade)
+{
+    gl_Position = position;
+    f_coord = coord;
+    f_normal = normal;
+    f_fade = fade;
+    EmitVertex();
+}
+
+void main()
+{
+    vec3 a = v_world[1];
+    vec3 b = v_world[2];
+    vec3 n = normalize(v_normal[1] + v_normal[2]);
+    vec3 to_eye = normalize(eye - 0.5 * (a + b));
+
+    // on the silhouette, one triangle faces the camera and the other does not
+    float d1 = dot(triangle_normal(a, b, v_world[0], n), to_eye);
+    float d2 = dot(triangle_normal(a, b, v_world[3], n), to_eye);
+    if (d1 * d2 > 0.0 && min(abs(d1), abs(d2)) > silhouette_margin)
+        return;
+
+    // the fin fades in as it turns to face the camera (Lengyel 2001)
+    vec3 fin_normal = normalize(cross(b - a, n));
+    float fade = 2.0 * abs(dot(fin_normal, to_eye)) - 1.0;
+    if (fade <= 0.0)
+        return;
+
+    // each edge starts at a different place of the strand pattern
+    float start = float(gl_PrimitiveIDIn % 1000) * 17.0;
+    float end = start + length(b - a) * strand_density;
+
+    emit(gl_in[1].gl_Position, vec2(start, 0.0), n, fade);
+    emit(gl_in[2].gl_Position, vec2(end, 0.0), n, fade);
+    emit(v_tip[1], vec2(start, 1.0), n, fade);
+    emit(v_tip[2], vec2(end, 1.0), n, fade);
+    EndPrimitive();
+}

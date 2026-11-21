@@ -1,0 +1,46 @@
+#version 450
+
+in vec2 f_coord;
+in vec3 f_normal;
+in float f_fade;
+
+layout(location = 0) out vec4 output_color;
+
+// same look as the shells (fragment.shd)
+const vec3 light_dir = normalize(vec3(1.0, 1.5, 0.5));
+const float light_power = 1.3;
+const vec3 view_dir = normalize(vec3(1.0, 1.0, 1.0));
+const vec3 root_color = vec3(0.45, 0.33, 0.24);
+const vec3 tip_color = vec3(0.95, 0.86, 0.72);
+
+// pseudo random number in [0, 1[
+float hash(float x)
+{
+    return fract(sin(x * 12.9898) * 43758.5453);
+}
+
+void main()
+{
+    // the fin is cut in vertical strips, each strip holds one strand
+    float cell = floor(f_coord.x);
+    float local = fract(f_coord.x) - 0.5;
+    float strand_length = mix(0.2, 1.0, hash(cell + 13.0));
+    float t = f_coord.y / strand_length;
+    float radius = 0.4 * sqrt(max(1.0 - t, 0.0));
+
+    // while the fin fades in, only some of its strands are drawn
+    if (hash(cell + 3.0) > f_fade || abs(local) > radius)
+        discard;
+
+    vec3 n = normalize(f_normal);
+    float diffuse = dot(n, light_dir) * 0.5 + 0.5;
+    diffuse *= diffuse;
+    float occlusion = mix(0.35, 1.0, f_coord.y);
+    float tint = mix(0.8, 1.2, hash(cell + 29.0));
+    vec3 color = mix(root_color, tip_color, clamp(t, 0.0, 1.0)) * tint;
+    float rim = pow(1.0 - max(dot(n, view_dir), 0.0), 3.0);
+
+    color = light_power * color * diffuse * occlusion
+        + 0.3 * rim * f_coord.y * tip_color;
+    output_color = vec4(color, 1.0);
+}

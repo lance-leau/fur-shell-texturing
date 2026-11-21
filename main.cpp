@@ -2,6 +2,7 @@
 #include <GL/glew.h> // glew doit etre tout en haut
 // clang-format on
 #include <GL/freeglut.h>
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <iostream>
@@ -19,7 +20,9 @@
     } while (0)
 
 GLuint bunny_vao_id;
+GLuint fin_vao_id;
 GLuint program_id;
+GLuint fin_program_id;
 
 // the bunny is a triangle soup: a vertex is repeated in every triangle that
 // uses it. The identical vertices are merged and drawn with an index buffer,
@@ -55,30 +58,74 @@ void index_bunny()
               << bunny_positions.size() / 3 << " unique" << std::endl;
 }
 
+// the edges of the bunny for the fins, 4 indices per edge for
+// GL_LINES_ADJACENCY: the opposite vertex of the 1st triangle, the 2 vertices
+// of the edge, the opposite vertex of the 2nd triangle
+std::vector<GLuint> edge_indices;
+
+void find_edges()
+{
+    // edge (smallest index, biggest index) -> opposite vertices
+    std::map<std::pair<GLuint, GLuint>, std::vector<GLuint>> opposite;
+    for (size_t i = 0; i < bunny_indices.size(); i += 3)
+    {
+        for (int k = 0; k < 3; k++)
+        {
+            GLuint a = bunny_indices[i + k];
+            GLuint b = bunny_indices[i + (k + 1) % 3];
+            GLuint c = bunny_indices[i + (k + 2) % 3];
+            opposite[{ std::min(a, b), std::max(a, b) }].push_back(c);
+        }
+    }
+    for (auto& edge : opposite)
+    {
+        // an edge on a hole of the mesh has only one triangle: no fin
+        if (edge.second.size() != 2)
+            continue;
+        edge_indices.push_back(edge.second[0]);
+        edge_indices.push_back(edge.first.first);
+        edge_indices.push_back(edge.first.second);
+        edge_indices.push_back(edge.second[1]);
+    }
+    std::cout << "fins: " << edge_indices.size() / 4 << " edges" << std::endl;
+}
+
 // fur parameters
 int shell_count = 64;
 float fur_length = 0.05f;
 float strand_density = 250.0f;
+bool show_fins = true;
 
 float anim_time = 0.0f;
 
-// FPS counter and GPU time of the fur draw call, printed every second
+// FPS counter and GPU time of the shells and the fins, printed every second
 int frame_count = 0;
 int fps_start_time = 0;
-GLuint gpu_time_query;
-double gpu_time_ms = 0.0;
+GLuint shell_time_query;
+GLuint fin_time_query;
+double shell_time_ms = 0.0;
+double fin_time_ms = 0.0;
 
-void update_uniforms()
+void update_uniforms(GLuint program)
 {
-    glUniform1f(glGetUniformLocation(program_id, "anim_time"), anim_time);
+    glUniform1f(glGetUniformLocation(program, "anim_time"), anim_time);
     TEST_OPENGL_ERROR();
-    glUniform1f(glGetUniformLocation(program_id, "strand_density"),
+    glUniform1f(glGetUniformLocation(program, "strand_density"),
                 strand_density);
     TEST_OPENGL_ERROR();
-    glUniform1i(glGetUniformLocation(program_id, "shell_count"), shell_count);
+    glUniform1i(glGetUniformLocation(program, "shell_count"), shell_count);
     TEST_OPENGL_ERROR();
-    glUniform1f(glGetUniformLocation(program_id, "fur_length"), fur_length);
+    glUniform1f(glGetUniformLocation(program, "fur_length"), fur_length);
     TEST_OPENGL_ERROR();
+}
+
+// waits for the GPU to give the time of a query, in ms (simple, but it syncs)
+double query_time_ms(GLuint query)
+{
+    GLuint64 elapsed_ns;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &elapsed_ns);
+    TEST_OPENGL_ERROR();
+    return elapsed_ns / 1e6;
 }
 
 void window_resize(int width, int height)
@@ -91,27 +138,41 @@ void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     TEST_OPENGL_ERROR();
-    update_uniforms();
+
+    // shells: one instance per shell, the vertex shader uses gl_InstanceID
+    glUseProgram(program_id);
+    update_uniforms(program_id);
     glBindVertexArray(bunny_vao_id);
-    TEST_OPENGL_ERROR();
     // the GPU measures how long the draw call takes on its side
-    glBeginQuery(GL_TIME_ELAPSED, gpu_time_query);
-    TEST_OPENGL_ERROR();
-    // one instance per shell, the vertex shader uses gl_InstanceID
+    glBeginQuery(GL_TIME_ELAPSED, shell_time_query);
     glDrawElementsInstanced(GL_TRIANGLES, bunny_indices.size(), GL_UNSIGNED_INT,
                             0, shell_count);
-    TEST_OPENGL_ERROR();
     glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
+
+    // fins: the geometry shader gets each edge with its 2 triangles and
+    // builds a fin on the edges of the silhouette
+    if (show_fins)
+    {
+        glUseProgram(fin_program_id);
+        update_uniforms(fin_program_id);
+        glBindVertexArray(fin_vao_id);
+        // a fin can be seen from both sides
+        glDisable(GL_CULL_FACE);
+        glBeginQuery(GL_TIME_ELAPSED, fin_time_query);
+        glDrawElements(GL_LINES_ADJACENCY, edge_indices.size(), GL_UNSIGNED_INT,
+                       0);
+        glEndQuery(GL_TIME_ELAPSED);
+        glEnable(GL_CULL_FACE);
+        TEST_OPENGL_ERROR();
+    }
+
     glBindVertexArray(0);
-    TEST_OPENGL_ERROR();
     glutSwapBuffers();
 
-    // waits for the GPU to finish the draw call (simple, but it syncs)
-    GLuint64 elapsed_ns;
-    glGetQueryObjectui64v(gpu_time_query, GL_QUERY_RESULT, &elapsed_ns);
-    TEST_OPENGL_ERROR();
-    gpu_time_ms += elapsed_ns / 1e6;
+    shell_time_ms += query_time_ms(shell_time_query);
+    if (show_fins)
+        fin_time_ms += query_time_ms(fin_time_query);
     frame_count++;
 }
 
@@ -124,10 +185,12 @@ void idle()
     if (now - fps_start_time >= 1000)
     {
         std::cout << "FPS: " << frame_count
-                  << ", fur draw: " << gpu_time_ms / frame_count << " ms"
+                  << ", shells: " << shell_time_ms / frame_count
+                  << " ms, fins: " << fin_time_ms / frame_count << " ms"
                   << std::endl;
         frame_count = 0;
-        gpu_time_ms = 0.0;
+        shell_time_ms = 0.0;
+        fin_time_ms = 0.0;
         fps_start_time = now;
     }
     glutPostRedisplay();
@@ -147,10 +210,13 @@ void keyboard(unsigned char key, int, int)
         strand_density *= 1.1f;
     else if (key == 'd')
         strand_density /= 1.1f;
+    else if (key == 'f')
+        show_fins = !show_fins;
     else
         return;
     std::cout << "shells: " << shell_count << ", length: " << fur_length
-              << ", density: " << strand_density << std::endl;
+              << ", density: " << strand_density
+              << ", fins: " << (show_fins ? "on" : "off") << std::endl;
 }
 
 void init_glut(int& argc, char* argv[])
@@ -194,69 +260,49 @@ void init_GL()
     TEST_OPENGL_ERROR();
 }
 
+// a buffer is only memory: the target used to fill it does not matter
+GLuint create_buffer(size_t size, const void* data)
+{
+    GLuint buffer_id;
+    glGenBuffers(1, &buffer_id);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer_id);
+    glBufferData(GL_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+    TEST_OPENGL_ERROR();
+    return buffer_id;
+}
+
+// a VAO with the positions (location 0), the normals (location 1) and the
+// given index buffer (remembered by the VAO)
+GLuint create_vao(GLuint position_vbo, GLuint normal_vbo, GLuint index_buffer)
+{
+    GLuint vao_id;
+    glGenVertexArrays(1, &vao_id);
+    glBindVertexArray(vao_id);
+    glBindBuffer(GL_ARRAY_BUFFER, position_vbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, normal_vbo);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+    glBindVertexArray(0);
+    TEST_OPENGL_ERROR();
+    return vao_id;
+}
+
+// the shells and the fins use the same vertices, with different indices
 void init_object_vbo()
 {
-    int max_nb_vbo = 5;
-    int nb_vbo = 0;
-    int index_vbo = 0;
-    GLuint vbo_ids[max_nb_vbo];
-
-    GLint vertex_location = glGetAttribLocation(program_id, "position");
-    TEST_OPENGL_ERROR();
-    GLint normal_smooth_location =
-        glGetAttribLocation(program_id, "normalSmooth");
-    TEST_OPENGL_ERROR();
-
-    glGenVertexArrays(1, &bunny_vao_id);
-    TEST_OPENGL_ERROR();
-    glBindVertexArray(bunny_vao_id);
-    TEST_OPENGL_ERROR();
-
-    if (vertex_location != -1)
-        nb_vbo++;
-    if (normal_smooth_location != -1)
-        nb_vbo++;
-    glGenBuffers(nb_vbo, vbo_ids);
-    TEST_OPENGL_ERROR();
-
-    if (vertex_location != -1)
-    {
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[index_vbo++]);
-        TEST_OPENGL_ERROR();
-        glBufferData(GL_ARRAY_BUFFER, bunny_positions.size() * sizeof(float),
-                     bunny_positions.data(), GL_STATIC_DRAW);
-        TEST_OPENGL_ERROR();
-        glVertexAttribPointer(vertex_location, 3, GL_FLOAT, GL_FALSE, 0, 0);
-        TEST_OPENGL_ERROR();
-        glEnableVertexAttribArray(vertex_location);
-        TEST_OPENGL_ERROR();
-    }
-
-    if (normal_smooth_location != -1)
-    {
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_ids[index_vbo++]);
-        TEST_OPENGL_ERROR();
-        glBufferData(GL_ARRAY_BUFFER, bunny_normals.size() * sizeof(float),
-                     bunny_normals.data(), GL_STATIC_DRAW);
-        TEST_OPENGL_ERROR();
-        glVertexAttribPointer(normal_smooth_location, 3, GL_FLOAT, GL_FALSE, 0,
-                              0);
-        TEST_OPENGL_ERROR();
-        glEnableVertexAttribArray(normal_smooth_location);
-        TEST_OPENGL_ERROR();
-    }
-
-    // the index buffer is remembered by the VAO
-    GLuint index_buffer_id;
-    glGenBuffers(1, &index_buffer_id);
-    TEST_OPENGL_ERROR();
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_id);
-    TEST_OPENGL_ERROR();
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, bunny_indices.size() * sizeof(GLuint),
-                 bunny_indices.data(), GL_STATIC_DRAW);
-    TEST_OPENGL_ERROR();
-
-    glBindVertexArray(0);
+    GLuint position_vbo = create_buffer(
+        bunny_positions.size() * sizeof(GLfloat), bunny_positions.data());
+    GLuint normal_vbo = create_buffer(bunny_normals.size() * sizeof(GLfloat),
+                                      bunny_normals.data());
+    GLuint triangle_ibo = create_buffer(bunny_indices.size() * sizeof(GLuint),
+                                        bunny_indices.data());
+    GLuint edge_ibo = create_buffer(edge_indices.size() * sizeof(GLuint),
+                                    edge_indices.data());
+    bunny_vao_id = create_vao(position_vbo, normal_vbo, triangle_ibo);
+    fin_vao_id = create_vao(position_vbo, normal_vbo, edge_ibo);
 }
 
 std::string load(const std::string& filename)
@@ -328,9 +374,12 @@ int main(int argc, char* argv[])
         std::exit(-1);
     init_GL();
     program_id = create_program("vertex.shd", "", "fragment.shd");
-    glUseProgram(program_id);
-    glGenQueries(1, &gpu_time_query);
+    fin_program_id =
+        create_program("vertex.shd", "fin_geometry.shd", "fin_fragment.shd");
+    glGenQueries(1, &shell_time_query);
+    glGenQueries(1, &fin_time_query);
     index_bunny();
+    find_edges();
     init_object_vbo();
     glutMainLoop();
 }
