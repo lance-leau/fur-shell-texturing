@@ -4,6 +4,7 @@
 #include <GL/freeglut.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -19,19 +20,20 @@
             std::cerr << "OpenGL ERROR! " << __LINE__ << std::endl;            \
     } while (0)
 
-GLuint bunny_vao_id;
+GLuint mesh_vao_id;
 GLuint fin_vao_id;
 GLuint program_id;
 GLuint fin_program_id;
 
+// the mesh that gets the fur: the bunny, or a sphere with --ball
+std::vector<GLfloat> mesh_positions;
+std::vector<GLfloat> mesh_normals;
+std::vector<GLuint> mesh_indices;
+
 // the bunny is a triangle soup: a vertex is repeated in every triangle that
 // uses it. The identical vertices are merged and drawn with an index buffer,
 // so the vertex shader runs about 6 times less.
-std::vector<GLfloat> bunny_positions;
-std::vector<GLfloat> bunny_normals;
-std::vector<GLuint> bunny_indices;
-
-void index_bunny()
+void load_bunny()
 {
     std::map<std::array<GLfloat, 6>, GLuint> vertex_index;
     for (size_t i = 0; i < vertex_buffer_data.size(); i += 3)
@@ -42,23 +44,80 @@ void index_bunny()
                                           normal_smooth_buffer_data[i],
                                           normal_smooth_buffer_data[i + 1],
                                           normal_smooth_buffer_data[i + 2] };
-        GLuint new_index = bunny_positions.size() / 3;
+        GLuint new_index = mesh_positions.size() / 3;
         // insert does nothing if the vertex is already known
         auto result = vertex_index.insert({ vertex, new_index });
-        bunny_indices.push_back(result.first->second);
+        mesh_indices.push_back(result.first->second);
         if (result.second)
         {
-            bunny_positions.insert(bunny_positions.end(), vertex.begin(),
-                                   vertex.begin() + 3);
-            bunny_normals.insert(bunny_normals.end(), vertex.begin() + 3,
-                                 vertex.end());
+            mesh_positions.insert(mesh_positions.end(), vertex.begin(),
+                                  vertex.begin() + 3);
+            mesh_normals.insert(mesh_normals.end(), vertex.begin() + 3,
+                                vertex.end());
         }
     }
-    std::cout << "bunny: " << bunny_indices.size() << " vertices, "
-              << bunny_positions.size() / 3 << " unique" << std::endl;
+    std::cout << "bunny: " << mesh_indices.size() << " vertices, "
+              << mesh_positions.size() / 3 << " unique" << std::endl;
 }
 
-// the edges of the bunny for the fins, 4 indices per edge for
+// a sphere of the size of the bunny (center (0, 0.5, 0), radius 0.4): a
+// vertex on each pole and rings of vertices in between. The last vertex of a
+// ring is linked to the first one (no copy on the seam), so the mesh is
+// closed: every edge has 2 triangles, as the fins need.
+void make_sphere(int rings, int segments)
+{
+    const float pi = 3.14159265f;
+    // direction from the center, which is also the normal
+    auto add_vertex = [](float x, float y, float z) {
+        mesh_positions.insert(mesh_positions.end(),
+                              { 0.4f * x, 0.5f + 0.4f * y, 0.4f * z });
+        mesh_normals.insert(mesh_normals.end(), { x, y, z });
+    };
+    auto add_triangle = [](GLuint a, GLuint b, GLuint c) {
+        mesh_indices.insert(mesh_indices.end(), { a, b, c });
+    };
+    // index of the vertex j of the ring i (rings 1 to rings - 1)
+    auto ring_vertex = [segments](int i, int j) {
+        return GLuint(1 + (i - 1) * segments + j % segments);
+    };
+
+    add_vertex(0.0f, 1.0f, 0.0f);
+    for (int i = 1; i < rings; i++)
+    {
+        float theta = pi * i / rings; // angle from the north pole
+        for (int j = 0; j < segments; j++)
+        {
+            float phi = 2.0f * pi * j / segments;
+            add_vertex(std::sin(theta) * std::cos(phi), std::cos(theta),
+                       std::sin(theta) * std::sin(phi));
+        }
+    }
+    add_vertex(0.0f, -1.0f, 0.0f);
+    GLuint south = mesh_positions.size() / 3 - 1;
+
+    // counter clockwise seen from outside, so the back faces are culled
+    for (int j = 0; j < segments; j++)
+        add_triangle(0, ring_vertex(1, j + 1), ring_vertex(1, j));
+    for (int i = 1; i < rings - 1; i++)
+    {
+        for (int j = 0; j < segments; j++)
+        {
+            GLuint a = ring_vertex(i, j);
+            GLuint b = ring_vertex(i, j + 1);
+            GLuint c = ring_vertex(i + 1, j);
+            GLuint d = ring_vertex(i + 1, j + 1);
+            add_triangle(a, d, c);
+            add_triangle(a, b, d);
+        }
+    }
+    for (int j = 0; j < segments; j++)
+        add_triangle(ring_vertex(rings - 1, j), ring_vertex(rings - 1, j + 1),
+                     south);
+    std::cout << "ball: " << mesh_positions.size() / 3 << " vertices, "
+              << mesh_indices.size() / 3 << " triangles" << std::endl;
+}
+
+// the edges of the mesh for the fins, 4 indices per edge for
 // GL_LINES_ADJACENCY: the opposite vertex of the 1st triangle, the 2 vertices
 // of the edge, the opposite vertex of the 2nd triangle
 std::vector<GLuint> edge_indices;
@@ -67,13 +126,13 @@ void find_edges()
 {
     // edge (smallest index, biggest index) -> opposite vertices
     std::map<std::pair<GLuint, GLuint>, std::vector<GLuint>> opposite;
-    for (size_t i = 0; i < bunny_indices.size(); i += 3)
+    for (size_t i = 0; i < mesh_indices.size(); i += 3)
     {
         for (int k = 0; k < 3; k++)
         {
-            GLuint a = bunny_indices[i + k];
-            GLuint b = bunny_indices[i + (k + 1) % 3];
-            GLuint c = bunny_indices[i + (k + 2) % 3];
+            GLuint a = mesh_indices[i + k];
+            GLuint b = mesh_indices[i + (k + 1) % 3];
+            GLuint c = mesh_indices[i + (k + 2) % 3];
             opposite[{ std::min(a, b), std::max(a, b) }].push_back(c);
         }
     }
@@ -142,10 +201,10 @@ void display()
     // shells: one instance per shell, the vertex shader uses gl_InstanceID
     glUseProgram(program_id);
     update_uniforms(program_id);
-    glBindVertexArray(bunny_vao_id);
+    glBindVertexArray(mesh_vao_id);
     // the GPU measures how long the draw call takes on its side
     glBeginQuery(GL_TIME_ELAPSED, shell_time_query);
-    glDrawElementsInstanced(GL_TRIANGLES, bunny_indices.size(), GL_UNSIGNED_INT,
+    glDrawElementsInstanced(GL_TRIANGLES, mesh_indices.size(), GL_UNSIGNED_INT,
                             0, shell_count);
     glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
@@ -293,15 +352,15 @@ GLuint create_vao(GLuint position_vbo, GLuint normal_vbo, GLuint index_buffer)
 // the shells and the fins use the same vertices, with different indices
 void init_object_vbo()
 {
-    GLuint position_vbo = create_buffer(
-        bunny_positions.size() * sizeof(GLfloat), bunny_positions.data());
-    GLuint normal_vbo = create_buffer(bunny_normals.size() * sizeof(GLfloat),
-                                      bunny_normals.data());
-    GLuint triangle_ibo = create_buffer(bunny_indices.size() * sizeof(GLuint),
-                                        bunny_indices.data());
+    GLuint position_vbo = create_buffer(mesh_positions.size() * sizeof(GLfloat),
+                                        mesh_positions.data());
+    GLuint normal_vbo = create_buffer(mesh_normals.size() * sizeof(GLfloat),
+                                      mesh_normals.data());
+    GLuint triangle_ibo = create_buffer(mesh_indices.size() * sizeof(GLuint),
+                                        mesh_indices.data());
     GLuint edge_ibo = create_buffer(edge_indices.size() * sizeof(GLuint),
                                     edge_indices.data());
-    bunny_vao_id = create_vao(position_vbo, normal_vbo, triangle_ibo);
+    mesh_vao_id = create_vao(position_vbo, normal_vbo, triangle_ibo);
     fin_vao_id = create_vao(position_vbo, normal_vbo, edge_ibo);
 }
 
@@ -378,7 +437,15 @@ int main(int argc, char* argv[])
         create_program("vertex.shd", "fin_geometry.shd", "fin_fragment.shd");
     glGenQueries(1, &shell_time_query);
     glGenQueries(1, &fin_time_query);
-    index_bunny();
+    // ./main --ball: a furry ball instead of the bunny
+    bool ball = false;
+    for (int i = 1; i < argc; i++)
+        if (std::string(argv[i]) == "--ball")
+            ball = true;
+    if (ball)
+        make_sphere(64, 128);
+    else
+        load_bunny();
     find_edges();
     init_object_vbo();
     glutMainLoop();
