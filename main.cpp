@@ -24,6 +24,7 @@ GLuint mesh_vao_id;
 GLuint fin_vao_id;
 GLuint program_id;
 GLuint fin_program_id;
+GLuint physics_program_id;
 
 // the mesh that gets the fur: the bunny, or a sphere with --ball
 std::vector<GLfloat> mesh_positions;
@@ -155,6 +156,17 @@ float fur_length = 0.05f;
 float strand_density = 250.0f;
 bool show_fins = true;
 
+// strand physics (compute shader): a spring keeps the strands up. At full
+// bend, the spring pulls with stiffness * fur_length: 1.2 times the gravity,
+// so a strand that points up still stands, but the others bend a lot.
+// The damping is the part of the speed kept at each step (the rest is lost)
+const float spring_strength = 1.2f;
+const float damping = 0.995f;
+// fixed time step: the simulation does not depend on the FPS
+const float physics_step = 1.0f / 240.0f;
+float physics_time_left = 0.0f;
+float frame_dt = 0.0f;
+
 // angle of the model around the vertical axis, turned with the arrows
 float rotation = 0.0f;
 const float rotation_speed = 2.0f; // radians per second
@@ -162,18 +174,33 @@ bool left_held = false;
 bool right_held = false;
 int last_frame_time = 0;
 
-// FPS counter and GPU time of the shells and the fins, printed every second
+// FPS counter and GPU time of the physics, the shells and the fins, printed
+// every second
 int frame_count = 0;
 int fps_start_time = 0;
+GLuint physics_time_query;
 GLuint shell_time_query;
 GLuint fin_time_query;
+double physics_time_ms = 0.0;
 double shell_time_ms = 0.0;
 double fin_time_ms = 0.0;
 
+// the model turns around the vertical axis (arrows), then it is moved down by
+// 0.5 to be centered (it goes from y = 0 to y = 1). Column major, like OpenGL
+void set_model_matrix(GLuint program)
+{
+    float c = std::cos(rotation);
+    float s = std::sin(rotation);
+    GLfloat model[16] = { c, 0.0f, -s, 0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
+                          s, 0.0f, c,  0.0f, 0.0f, -0.5f, 0.0f, 1.0f };
+    glUniformMatrix4fv(glGetUniformLocation(program, "model_matrix"), 1,
+                       GL_FALSE, model);
+    TEST_OPENGL_ERROR();
+}
+
 void update_uniforms(GLuint program)
 {
-    glUniform1f(glGetUniformLocation(program, "rotation"), rotation);
-    TEST_OPENGL_ERROR();
+    set_model_matrix(program);
     glUniform1f(glGetUniformLocation(program, "strand_density"),
                 strand_density);
     TEST_OPENGL_ERROR();
@@ -198,10 +225,44 @@ void window_resize(int width, int height)
     TEST_OPENGL_ERROR();
 }
 
+// moves the strands by as many fixed steps as the time of the last frame
+void simulate()
+{
+    glUseProgram(physics_program_id);
+    set_model_matrix(physics_program_id);
+    GLuint vertex_count = mesh_positions.size() / 3;
+    glUniform1ui(glGetUniformLocation(physics_program_id, "vertex_count"),
+                 vertex_count);
+    glUniform1f(glGetUniformLocation(physics_program_id, "fur_length"),
+                fur_length);
+    glUniform1f(glGetUniformLocation(physics_program_id, "dt"), physics_step);
+    float stiffness = spring_strength * 9.81f / fur_length;
+    glUniform1f(glGetUniformLocation(physics_program_id, "stiffness"),
+                stiffness);
+    glUniform1f(glGetUniformLocation(physics_program_id, "damping"), damping);
+    TEST_OPENGL_ERROR();
+
+    // after a freeze (window moved...), do not try to catch up on everything
+    physics_time_left = std::min(physics_time_left + frame_dt, 0.1f);
+    glBeginQuery(GL_TIME_ELAPSED, physics_time_query);
+    while (physics_time_left >= physics_step)
+    {
+        // one invocation per vertex, in groups of 64
+        glDispatchCompute((vertex_count + 63) / 64, 1, 1);
+        // the next step (and the draw) must see what this step wrote
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        physics_time_left -= physics_step;
+    }
+    glEndQuery(GL_TIME_ELAPSED);
+    TEST_OPENGL_ERROR();
+}
+
 void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     TEST_OPENGL_ERROR();
+
+    simulate();
 
     // shells: one instance per shell, the vertex shader uses gl_InstanceID
     glUseProgram(program_id);
@@ -234,6 +295,7 @@ void display()
     glBindVertexArray(0);
     glutSwapBuffers();
 
+    physics_time_ms += query_time_ms(physics_time_query);
     shell_time_ms += query_time_ms(shell_time_query);
     if (show_fins)
         fin_time_ms += query_time_ms(fin_time_query);
@@ -244,20 +306,22 @@ void idle()
 {
     // the rotation follows the real time, whatever the FPS
     int now = glutGet(GLUT_ELAPSED_TIME);
-    float dt = (now - last_frame_time) / 1000.0f;
+    frame_dt = (now - last_frame_time) / 1000.0f;
     last_frame_time = now;
     if (right_held)
-        rotation += rotation_speed * dt;
+        rotation += rotation_speed * frame_dt;
     if (left_held)
-        rotation -= rotation_speed * dt;
+        rotation -= rotation_speed * frame_dt;
 
     if (now - fps_start_time >= 1000)
     {
         std::cout << "FPS: " << frame_count
-                  << ", shells: " << shell_time_ms / frame_count
+                  << ", physics: " << physics_time_ms / frame_count
+                  << " ms, shells: " << shell_time_ms / frame_count
                   << " ms, fins: " << fin_time_ms / frame_count << " ms"
                   << std::endl;
         frame_count = 0;
+        physics_time_ms = 0.0;
         shell_time_ms = 0.0;
         fin_time_ms = 0.0;
         fps_start_time = now;
@@ -393,6 +457,29 @@ void init_object_vbo()
                                     edge_indices.data());
     mesh_vao_id = create_vao(position_vbo, normal_vbo, triangle_ibo);
     fin_vao_id = create_vao(position_vbo, normal_vbo, edge_ibo);
+
+    // the strands start at rest: straight out of the skin, in world space
+    // (the model is only moved down by 0.5 at the start). For each vertex:
+    // tip (x, y, z, w) then previous tip (x, y, z, w)
+    std::vector<GLfloat> strands;
+    for (size_t i = 0; i < mesh_positions.size(); i += 3)
+    {
+        float x = mesh_positions[i] + mesh_normals[i] * fur_length;
+        float y = mesh_positions[i + 1] + mesh_normals[i + 1] * fur_length;
+        float z = mesh_positions[i + 2] + mesh_normals[i + 2] * fur_length;
+        strands.insert(strands.end(),
+                       { x, y - 0.5f, z, 0.0f, x, y - 0.5f, z, 0.0f });
+    }
+    GLuint strand_ssbo =
+        create_buffer(strands.size() * sizeof(GLfloat), strands.data());
+
+    // the compute shader reads the mesh and moves the strands, the vertex
+    // shader reads the strands: the buffers are bound to the binding points
+    // of the shaders
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, position_vbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, normal_vbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, strand_ssbo);
+    TEST_OPENGL_ERROR();
 }
 
 std::string load(const std::string& filename)
@@ -457,6 +544,24 @@ GLuint create_program(const std::string& vertex, const std::string& geometry,
     return program;
 }
 
+// a compute shader is alone in its program
+GLuint create_compute_program(const std::string& compute)
+{
+    GLuint program = glCreateProgram();
+    glAttachShader(program, compile_shader(GL_COMPUTE_SHADER, compute));
+    glLinkProgram(program);
+    TEST_OPENGL_ERROR();
+    GLint status;
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    if (status != GL_TRUE)
+    {
+        char log[4096];
+        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+        std::cerr << "link: " << log << std::endl;
+    }
+    return program;
+}
+
 int main(int argc, char* argv[])
 {
     init_glut(argc, argv);
@@ -466,6 +571,8 @@ int main(int argc, char* argv[])
     program_id = create_program("vertex.shd", "", "fragment.shd");
     fin_program_id =
         create_program("vertex.shd", "fin_geometry.shd", "fin_fragment.shd");
+    physics_program_id = create_compute_program("physics.shd");
+    glGenQueries(1, &physics_time_query);
     glGenQueries(1, &shell_time_query);
     glGenQueries(1, &fin_time_query);
     // ./main --ball: a furry ball instead of the bunny

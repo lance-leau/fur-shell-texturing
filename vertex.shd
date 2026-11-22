@@ -3,7 +3,20 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normalSmooth;
 
-uniform float rotation;
+// the tip of each strand, moved by the compute shader (physics.shd), in
+// world space. With an index buffer, gl_VertexID is the index of the vertex
+struct Strand
+{
+    vec4 tip;
+    vec4 previous;
+};
+
+layout(std430, binding = 2) readonly buffer strands_buffer
+{
+    Strand strands[];
+};
+
+uniform mat4 model_matrix;
 uniform int shell_count;
 uniform float fur_length;
 
@@ -16,53 +29,41 @@ out float v_height;
 out vec3 v_world;
 out vec4 v_tip;
 
-// must stay < 1, else a strand that points up gets a null direction
-const float gravity = 0.95;
-
-mat4 model_view_matrix = mat4(0.57735, -0.33333, 0.57735, 0.00000, 0.00000,
-                              0.66667, 0.57735, 0.00000, -0.57735, -0.33333,
-                              0.57735, 0.00000, 0.00000, 0.00000, -17, 1.00000);
+// the camera (the model view matrix of the TP)
+mat4 view_matrix = mat4(0.57735, -0.33333, 0.57735, 0.00000, 0.00000, 0.66667,
+                        0.57735, 0.00000, -0.57735, -0.33333, 0.57735, 0.00000,
+                        0.00000, 0.00000, -17, 1.00000);
 
 // zoomed in compared to the TP (24 instead of 15) to see the fur
 mat4 projection_matrix = mat4(
     24.00000, 0.00000, 0.00000, 0.00000, 0.00000, 24.00000, 0.00000, 0.00000,
     0.00000, 0.00000, -1.00020, -1.00000, 0.00000, 0.00000, -10.00100, 0.00000);
 
-// the model turns around the y axis (arrows), then it is moved down to be
-// centered (it goes from y = 0 to y = 1)
-mat4 model_matrix()
-{
-    float c = cos(rotation);
-    float s = sin(rotation);
-    return mat4(c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, -0.5,
-                0.0, 1.0);
-}
-
-// the strands bend down, more and more toward the tip. Only the direction
-// changes: a point at height h stays at fur_length * h from the root, so the
-// fur has the same length on the top and on the bottom of the bunny
-vec3 strand_direction(float h)
-{
-    return normalize(normalSmooth - vec3(0.0, gravity * h, 0.0));
-}
-
 void main()
 {
     // height of the shell: 0 on the skin, 1 at the tip of the fur
     float h = float(gl_InstanceID) / float(max(shell_count - 1, 1));
-    vec3 p = position + strand_direction(h) * fur_length * h;
 
-    mat4 model = model_matrix();
-    mat4 mvp = projection_matrix * model_view_matrix * model;
-    gl_Position = mvp * vec4(p, 1.0);
+    // the strand leaves the skin along the normal, then bends toward the
+    // simulated tip: a quadratic Bezier curve (root, middle, tip). The shell
+    // is at h on this curve
+    vec3 root = (model_matrix * vec4(position, 1.0)).xyz;
+    vec3 normal = normalize(mat3(model_matrix) * normalSmooth);
+    vec3 middle = root + normal * fur_length * 0.5;
+    vec3 tip = strands[gl_VertexID].tip.xyz;
+    vec3 p = (1.0 - h) * (1.0 - h) * root + 2.0 * h * (1.0 - h) * middle
+        + h * h * tip;
+
+    mat4 view_projection = projection_matrix * view_matrix;
+    gl_Position = view_projection * vec4(p, 1.0);
 
     // position on the skin, so every shell sees the same strands
     v_root = position;
     v_skin_normal = normalSmooth;
-    // the light does not turn with the bunny
-    v_normal = mat3(model) * normalSmooth;
+    // the light does not turn with the model
+    v_normal = normal;
     v_height = h;
 
-    v_world = (model * vec4(position, 1.0)).xyz;
-    v_tip = mvp * vec4(position + strand_direction(1.0) * fur_length, 1.0);
+    v_world = root;
+    v_tip = view_projection * vec4(tip, 1.0);
 }

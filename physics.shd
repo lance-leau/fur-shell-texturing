@@ -1,0 +1,76 @@
+#version 450
+
+// one invocation per vertex of the mesh: it moves the tip of the strand that
+// grows on this vertex, by one time step
+layout(local_size_x = 64) in;
+
+// the VBOs of the mesh, read as arrays of floats (x, y, z, x, y, z, ...)
+layout(std430, binding = 0) readonly buffer positions_buffer
+{
+    float positions[];
+};
+
+layout(std430, binding = 1) readonly buffer normals_buffer
+{
+    float normals[];
+};
+
+// the tip of each strand now and one step before, in world space (w unused)
+struct Strand
+{
+    vec4 tip;
+    vec4 previous;
+};
+
+layout(std430, binding = 2) buffer strands_buffer
+{
+    Strand strands[];
+};
+
+uniform uint vertex_count;
+uniform mat4 model_matrix;
+uniform float fur_length;
+uniform float dt; // time step, always the same
+uniform float stiffness; // strength of the spring that keeps the strand up
+uniform float damping; // part of the speed kept from one step to the next
+
+const vec3 gravity = vec3(0.0, -9.81, 0.0);
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    // the last group of 64 goes past the end of the mesh
+    if (i >= vertex_count)
+        return;
+
+    vec3 position =
+        vec3(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
+    vec3 normal = vec3(normals[3 * i], normals[3 * i + 1], normals[3 * i + 2]);
+
+    // the root follows the model. At rest, the strand goes straight out of
+    // the skin
+    vec3 root = (model_matrix * vec4(position, 1.0)).xyz;
+    vec3 n = normalize(mat3(model_matrix) * normal);
+    vec3 rest = root + n * fur_length;
+
+    vec3 tip = strands[i].tip.xyz;
+    vec3 previous = strands[i].previous.xyz;
+
+    // forces: a spring pulls the tip back to its rest position, the gravity
+    // pulls it down
+    vec3 acceleration = stiffness * (rest - tip) + gravity;
+
+    // Verlet integration: the speed is (tip - previous) / dt, so the tip keeps
+    // going the way it was going (inertia), a bit slower each step (damping)
+    vec3 next = tip + (tip - previous) * damping + acceleration * dt * dt;
+
+    // the tip does not go under the skin
+    float height = dot(next - root, n);
+    if (height < 0.0)
+        next -= height * n;
+    // the strand keeps its length
+    next = root + normalize(next - root) * fur_length;
+
+    strands[i].previous = vec4(tip, 0.0);
+    strands[i].tip = vec4(next, 0.0);
+}
