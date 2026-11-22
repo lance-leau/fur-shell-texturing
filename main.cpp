@@ -478,7 +478,7 @@ int main(int argc, char* argv[])
         // a small ball with long fur: mostly a clump of strands
         make_sphere(64, 128, 0.12f);
         fur_length = 0.28f;
-        shell_count = 128;
+        shell_count = 192;
         // more strands, so they are thinner: long strands on a small ball
         // get wider toward the tip (the shells are bigger than the skin)
         strand_density = 400.0f;

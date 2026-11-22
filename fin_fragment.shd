@@ -24,9 +24,9 @@ void main()
     // the fin is cut in vertical strips, each strip holds one strand
     float cell = floor(f_coord.x);
     float local = fract(f_coord.x) - 0.5;
-    float strand_length = mix(0.2, 1.0, hash(cell + 13.0));
+    float strand_length = mix(0.1, 1.0, hash(cell + 13.0));
     float t = f_coord.y / strand_length;
-    float radius = 0.4 * sqrt(max(1.0 - t, 0.0));
+    float radius = 0.3 * sqrt(max(1.0 - t, 0.0));
 
     // while the fin fades in, only some of its strands are drawn
     if (hash(cell + 3.0) > f_fade || abs(local) > radius)
@@ -35,12 +35,12 @@ void main()
     vec3 n = normalize(f_normal);
     float diffuse = dot(n, light_dir) * 0.5 + 0.5;
     diffuse *= diffuse;
-    float occlusion = mix(0.35, 1.0, f_coord.y);
-    float tint = mix(0.8, 1.2, hash(cell + 29.0));
+    float occlusion = mix(0.5, 1.0, f_coord.y);
+    float tint = mix(0.7, 1.3, hash(cell + 29.0));
     vec3 color = mix(root_color, tip_color, clamp(t, 0.0, 1.0)) * tint;
     float rim = pow(1.0 - max(dot(n, view_dir), 0.0), 3.0);
 
     color = light_power * color * diffuse * occlusion
-        + 0.3 * rim * f_coord.y * tip_color;
+        + 0.15 * rim * f_coord.y * tip_color;
     output_color = vec4(color, 1.0);
 }

@@ -17,7 +17,7 @@ out vec3 v_world;
 out vec4 v_tip;
 
 // must stay < 1, else a strand that points up gets a null direction
-const float gravity = 0.6;
+const float gravity = 0.95;
 
 mat4 model_view_matrix = mat4(0.57735, -0.33333, 0.57735, 0.00000, 0.00000,
                               0.66667, 0.57735, 0.00000, -0.57735, -0.33333,
