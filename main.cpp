@@ -162,18 +162,29 @@ bool show_fins = true;
 const float spring_strength = 1.2f;
 // damping ratio of the spring: 1 = the strand goes back to rest without
 // bouncing, less than 1 = it bounces a bit before it stops
-const float damping_ratio = 0.8f;
+const float damping_ratio = 0.6f;
 // fixed time step: the simulation does not depend on the FPS
 const float physics_step = 1.0f / 240.0f;
 float physics_time_left = 0.0f;
 float frame_dt = 0.0f;
 
-// angle of the model around the vertical axis, turned with the arrows
+// angle of the model around the vertical axis, turned with left / right
 float rotation = 0.0f;
 const float rotation_speed = 2.0f; // radians per second
 bool left_held = false;
 bool right_held = false;
+// up / down: longer / shorter fur
+bool up_held = false;
+bool down_held = false;
+const float growth_speed = 0.7f; // the length is multiplied by e^0.7 per second
 int last_frame_time = 0;
+
+// the model can swing from the left to the right of the screen (m), to show
+// the inertia of the strands. On by default for the ball
+bool swinging = false;
+float swing_time = 0.0f;
+const float swing_width = 0.35f; // distance from the center to each side
+const float swing_period = 2.0f; // seconds for a full left-right-left
 
 // FPS counter and GPU time of the physics, the shells and the fins, printed
 // every second
@@ -186,14 +197,26 @@ double physics_time_ms = 0.0;
 double shell_time_ms = 0.0;
 double fin_time_ms = 0.0;
 
-// the model turns around the vertical axis (arrows), then it is moved down by
-// 0.5 to be centered (it goes from y = 0 to y = 1). Column major, like OpenGL
+// model matrix: the model turns around the vertical axis (left / right
+// arrows) and swings from the left to the right of the screen (m)
 void set_model_matrix(GLuint program)
 {
     float c = std::cos(rotation);
     float s = std::sin(rotation);
-    GLfloat model[16] = { c, 0.0f, -s, 0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
-                          s, 0.0f, c,  0.0f, 0.0f, -0.5f, 0.0f, 1.0f };
+    // the swing moves the model along the right direction of the camera
+    // (first row of the view matrix): left and right on the screen
+    float x =
+        swing_width * std::sin(2.0f * 3.14159265f * swing_time / swing_period);
+    // column major, like OpenGL: one column per line. The last column is the
+    // translation: swing, and down by 0.5 to center the model (y from 0 to 1)
+    // clang-format off
+    GLfloat model[16] = {
+        c,            0.0f,  -s,            0.0f,
+        0.0f,         1.0f,  0.0f,          0.0f,
+        s,            0.0f,  c,             0.0f,
+        0.57735f * x, -0.5f, -0.57735f * x, 1.0f
+    };
+    // clang-format on
     glUniformMatrix4fv(glGetUniformLocation(program, "model_matrix"), 1,
                        GL_FALSE, model);
     TEST_OPENGL_ERROR();
@@ -318,6 +341,14 @@ void idle()
         rotation += rotation_speed * frame_dt;
     if (left_held)
         rotation -= rotation_speed * frame_dt;
+    if (up_held)
+        fur_length =
+            std::min(fur_length * std::exp(growth_speed * frame_dt), 0.5f);
+    if (down_held)
+        fur_length =
+            std::max(fur_length * std::exp(-growth_speed * frame_dt), 0.01f);
+    if (swinging)
+        swing_time += frame_dt;
 
     if (now - fps_start_time >= 1000)
     {
@@ -341,30 +372,36 @@ void keyboard(unsigned char key, int, int)
         shell_count++;
     else if (key == '-' && shell_count > 2)
         shell_count--;
-    else if (key == 'L')
-        fur_length *= 1.1f;
-    else if (key == 'l')
-        fur_length /= 1.1f;
     else if (key == 'D')
         strand_density *= 1.1f;
     else if (key == 'd')
         strand_density /= 1.1f;
     else if (key == 'f')
         show_fins = !show_fins;
+    else if (key == 'm')
+        swinging = !swinging;
     else
         return;
     std::cout << "shells: " << shell_count << ", length: " << fur_length
               << ", density: " << strand_density
-              << ", fins: " << (show_fins ? "on" : "off") << std::endl;
+              << ", fins: " << (show_fins ? "on" : "off")
+              << ", swing: " << (swinging ? "on" : "off") << std::endl;
 }
 
-// the model turns while an arrow is held down
+// left / right: the model turns, up / down: the fur grows or shrinks, while
+// the arrow is held down
 void arrow(int key, bool held)
 {
     if (key == GLUT_KEY_LEFT)
         left_held = held;
     else if (key == GLUT_KEY_RIGHT)
         right_held = held;
+    else if (key == GLUT_KEY_UP)
+        up_held = held;
+    else if (key == GLUT_KEY_DOWN)
+        down_held = held;
+    if ((key == GLUT_KEY_UP || key == GLUT_KEY_DOWN) && !held)
+        std::cout << "length: " << fur_length << std::endl;
 }
 
 void arrow_down(int key, int, int)
@@ -595,6 +632,7 @@ int main(int argc, char* argv[])
         // more strands, so they are thinner: long strands on a small ball
         // get wider toward the tip (the shells are bigger than the skin)
         strand_density = 400.0f;
+        swinging = true;
     }
     else
         load_bunny();
