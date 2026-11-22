@@ -159,9 +159,10 @@ bool show_fins = true;
 // strand physics (compute shader): a spring keeps the strands up. At full
 // bend, the spring pulls with stiffness * fur_length: 1.2 times the gravity,
 // so a strand that points up still stands, but the others bend a lot.
-// The damping is the part of the speed kept at each step (the rest is lost)
 const float spring_strength = 1.2f;
-const float damping = 0.995f;
+// damping ratio of the spring: 1 = the strand goes back to rest without
+// bouncing, less than 1 = it bounces a bit before it stops
+const float damping_ratio = 0.8f;
 // fixed time step: the simulation does not depend on the FPS
 const float physics_step = 1.0f / 240.0f;
 float physics_time_left = 0.0f;
@@ -237,6 +238,11 @@ void simulate()
                 fur_length);
     glUniform1f(glGetUniformLocation(physics_program_id, "dt"), physics_step);
     float stiffness = spring_strength * 9.81f / fur_length;
+    // the spring alone makes the tip swing at sqrt(stiffness) radians per
+    // second. A friction of 2 * damping_ratio * sqrt(stiffness) * speed gives
+    // the damping ratio: over one step, the speed is multiplied by damping
+    float damping =
+        std::exp(-2.0f * damping_ratio * std::sqrt(stiffness) * physics_step);
     glUniform1f(glGetUniformLocation(physics_program_id, "stiffness"),
                 stiffness);
     glUniform1f(glGetUniformLocation(physics_program_id, "damping"), damping);
