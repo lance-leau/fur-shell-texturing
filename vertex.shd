@@ -3,7 +3,7 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normalSmooth;
 
-uniform float anim_time;
+uniform float rotation;
 uniform int shell_count;
 uniform float fur_length;
 
@@ -28,12 +28,12 @@ mat4 projection_matrix = mat4(
     24.00000, 0.00000, 0.00000, 0.00000, 0.00000, 24.00000, 0.00000, 0.00000,
     0.00000, 0.00000, -1.00020, -1.00000, 0.00000, 0.00000, -10.00100, 0.00000);
 
-// the bunny turns around the y axis, then it is moved down to be centered
-// (it goes from y = 0 to y = 1)
+// the model turns around the y axis (arrows), then it is moved down to be
+// centered (it goes from y = 0 to y = 1)
 mat4 model_matrix()
 {
-    float c = cos(0.5 * anim_time);
-    float s = sin(0.5 * anim_time);
+    float c = cos(rotation);
+    float s = sin(rotation);
     return mat4(c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, -0.5,
                 0.0, 1.0);
 }

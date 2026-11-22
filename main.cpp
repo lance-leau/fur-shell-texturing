@@ -155,7 +155,12 @@ float fur_length = 0.05f;
 float strand_density = 250.0f;
 bool show_fins = true;
 
-float anim_time = 0.0f;
+// angle of the model around the vertical axis, turned with the arrows
+float rotation = 0.0f;
+const float rotation_speed = 2.0f; // radians per second
+bool left_held = false;
+bool right_held = false;
+int last_frame_time = 0;
 
 // FPS counter and GPU time of the shells and the fins, printed every second
 int frame_count = 0;
@@ -167,7 +172,7 @@ double fin_time_ms = 0.0;
 
 void update_uniforms(GLuint program)
 {
-    glUniform1f(glGetUniformLocation(program, "anim_time"), anim_time);
+    glUniform1f(glGetUniformLocation(program, "rotation"), rotation);
     TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(program, "strand_density"),
                 strand_density);
@@ -237,9 +242,14 @@ void display()
 
 void idle()
 {
-    // the animation follows the real time, whatever the FPS
+    // the rotation follows the real time, whatever the FPS
     int now = glutGet(GLUT_ELAPSED_TIME);
-    anim_time = now / 1000.0f;
+    float dt = (now - last_frame_time) / 1000.0f;
+    last_frame_time = now;
+    if (right_held)
+        rotation += rotation_speed * dt;
+    if (left_held)
+        rotation -= rotation_speed * dt;
 
     if (now - fps_start_time >= 1000)
     {
@@ -278,6 +288,25 @@ void keyboard(unsigned char key, int, int)
               << ", fins: " << (show_fins ? "on" : "off") << std::endl;
 }
 
+// the model turns while an arrow is held down
+void arrow(int key, bool held)
+{
+    if (key == GLUT_KEY_LEFT)
+        left_held = held;
+    else if (key == GLUT_KEY_RIGHT)
+        right_held = held;
+}
+
+void arrow_down(int key, int, int)
+{
+    arrow(key, true);
+}
+
+void arrow_up(int key, int, int)
+{
+    arrow(key, false);
+}
+
 void init_glut(int& argc, char* argv[])
 {
     // glewExperimental = GL_TRUE;
@@ -291,6 +320,8 @@ void init_glut(int& argc, char* argv[])
     glutDisplayFunc(display);
     glutReshapeFunc(window_resize);
     glutKeyboardFunc(keyboard);
+    glutSpecialFunc(arrow_down);
+    glutSpecialUpFunc(arrow_up);
     glutIdleFunc(idle);
 }
 
