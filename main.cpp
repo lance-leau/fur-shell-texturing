@@ -19,12 +19,14 @@
             std::cerr << "OpenGL ERROR! " << __LINE__ << std::endl;            \
     } while (0)
 
+// all the IDs
 GLuint mesh_vao_id;
 GLuint fin_vao_id;
 GLuint program_id;
 GLuint fin_program_id;
 GLuint physics_program_id;
 
+// bunny arrays from the .hh file
 std::vector<GLfloat> mesh_positions;
 std::vector<GLfloat> mesh_normals;
 std::vector<GLuint> mesh_indices;
@@ -51,58 +53,42 @@ void load_bunny()
                                 vertex.end());
         }
     }
-    std::cout << "bunny: " << mesh_indices.size() << " vertices, "
-              << mesh_positions.size() / 3 << " unique" << std::endl;
+    // std::cout << "bunny: " << mesh_indices.size() << " vertices, "
+    //           << mesh_positions.size() / 3 << " unique" << std::endl;
 }
 
 void make_sphere(int rings, int segments, float radius)
 {
     const float pi = 3.14159265f;
-    auto add_vertex = [radius](float x, float y, float z) {
-        mesh_positions.insert(mesh_positions.end(),
-                              { radius * x, 0.5f + radius * y, radius * z });
-        mesh_normals.insert(mesh_normals.end(), { x, y, z });
-    };
-    auto add_triangle = [](GLuint a, GLuint b, GLuint c) {
-        mesh_indices.insert(mesh_indices.end(), { a, b, c });
-    };
-    auto ring_vertex = [segments](int i, int j) {
-        return GLuint(1 + (i - 1) * segments + j % segments);
-    };
-
-    add_vertex(0.0f, 1.0f, 0.0f);
-    for (int i = 1; i < rings; i++)
+    for (int i = 0; i <= rings; i++)
     {
-        float theta = pi * i / rings;
         for (int j = 0; j < segments; j++)
         {
+            float theta = pi * i / rings;
             float phi = 2.0f * pi * j / segments;
-            add_vertex(std::sin(theta) * std::cos(phi), std::cos(theta),
-                       std::sin(theta) * std::sin(phi));
+            float x = std::sin(theta) * std::cos(phi);
+            float y = std::cos(theta);
+            float z = std::sin(theta) * std::sin(phi);
+            mesh_positions.insert(
+                mesh_positions.end(),
+                { radius * x, 0.5f + radius * y, radius * z });
+            mesh_normals.insert(mesh_normals.end(), { x, y, z });
         }
     }
-    add_vertex(0.0f, -1.0f, 0.0f);
-    GLuint south = mesh_positions.size() / 3 - 1;
-
-    for (int j = 0; j < segments; j++)
-        add_triangle(0, ring_vertex(1, j + 1), ring_vertex(1, j));
-    for (int i = 1; i < rings - 1; i++)
+    for (int i = 0; i < rings; i++)
     {
         for (int j = 0; j < segments; j++)
         {
-            GLuint a = ring_vertex(i, j);
-            GLuint b = ring_vertex(i, j + 1);
-            GLuint c = ring_vertex(i + 1, j);
-            GLuint d = ring_vertex(i + 1, j + 1);
-            add_triangle(a, d, c);
-            add_triangle(a, b, d);
+            GLuint a = i * segments + j;
+            GLuint b = i * segments + (j + 1) % segments;
+            GLuint c = a + segments;
+            GLuint d = b + segments;
+            if (i > 0)
+                mesh_indices.insert(mesh_indices.end(), { a, b, d });
+            if (i < rings - 1)
+                mesh_indices.insert(mesh_indices.end(), { a, d, c });
         }
     }
-    for (int j = 0; j < segments; j++)
-        add_triangle(ring_vertex(rings - 1, j), ring_vertex(rings - 1, j + 1),
-                     south);
-    std::cout << "ball: " << mesh_positions.size() / 3 << " vertices, "
-              << mesh_indices.size() / 3 << " triangles" << std::endl;
 }
 
 std::vector<GLuint> edge_indices;
@@ -129,45 +115,44 @@ void find_edges()
         edge_indices.push_back(edge.first.second);
         edge_indices.push_back(edge.second[1]);
     }
-    std::cout << "fins: " << edge_indices.size() / 4 << " edges" << std::endl;
+    // std::cout << "fins: " << edge_indices.size() / 4 << " edges" <<
+    // std::endl;
 }
 
+// global var
 int shell_count = 64;
 float fur_length = 0.05f;
 float strand_density = 250.0f;
 bool show_fins = true;
-
 const float spring_strength = 1.2f;
 const float damping_ratio = 0.6f;
 bool wind_on = true;
-float wind_strength = 16.0f;
+float windStrength = 16.0f;
 float physics_time = 0.0f;
 const float physics_step = 1.0f / 240.0f;
 float physics_time_left = 0.0f;
 float frame_dt = 0.0f;
-
 float rotation = 0.0f;
 const float rotation_speed = 2.0f;
-bool left_held = false;
-bool right_held = false;
-bool up_held = false;
-bool down_held = false;
 const float growth_speed = 0.7f;
 int last_frame_time = 0;
-
 bool swinging = false;
 float swing_time = 0.0f;
 const float swing_width = 0.35f;
 const float swing_period = 2.0f;
-
 int frame_count = 0;
+double physics_time_ms = 0.0;
+double shell_time_ms = 0.0;
+double fin_time_ms = 0.0;
 int fps_start_time = 0;
 GLuint physics_time_query;
 GLuint shell_time_query;
 GLuint fin_time_query;
-double physics_time_ms = 0.0;
-double shell_time_ms = 0.0;
-double fin_time_ms = 0.0;
+// kb controls
+bool left_held = false;
+bool right_held = false;
+bool up_held = false;
+bool down_held = false;
 
 void set_model_matrix(GLuint program)
 {
@@ -187,6 +172,7 @@ void set_model_matrix(GLuint program)
 void update_uniforms(GLuint program)
 {
     set_model_matrix(program);
+    TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(program, "strand_density"),
                 strand_density);
     TEST_OPENGL_ERROR();
@@ -199,6 +185,7 @@ void update_uniforms(GLuint program)
 double query_time_ms(GLuint query)
 {
     GLuint64 elapsed_ns;
+    TEST_OPENGL_ERROR();
     glGetQueryObjectui64v(query, GL_QUERY_RESULT, &elapsed_ns);
     TEST_OPENGL_ERROR();
     return elapsed_ns / 1e6;
@@ -217,17 +204,20 @@ void simulate()
     GLuint vertex_count = mesh_positions.size() / 3;
     glUniform1ui(glGetUniformLocation(physics_program_id, "vertex_count"),
                  vertex_count);
+    TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(physics_program_id, "fur_length"),
                 fur_length);
+    TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(physics_program_id, "dt"), physics_step);
-    float stiffness = spring_strength * 9.81f / fur_length;
+    float stifness = spring_strength * 9.81f / fur_length;
     float damping =
-        std::exp(-2.0f * damping_ratio * std::sqrt(stiffness) * physics_step);
-    glUniform1f(glGetUniformLocation(physics_program_id, "stiffness"),
-                stiffness);
+        std::exp(-2.0f * damping_ratio * std::sqrt(stifness) * physics_step);
+    glUniform1f(glGetUniformLocation(physics_program_id, "stifness"), stifness);
+    TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(physics_program_id, "damping"), damping);
-    glUniform1f(glGetUniformLocation(physics_program_id, "wind_strength"),
-                wind_on ? wind_strength : 0.0f);
+    TEST_OPENGL_ERROR();
+    glUniform1f(glGetUniformLocation(physics_program_id, "windStrength"),
+                wind_on ? windStrength : 0.0f);
     TEST_OPENGL_ERROR();
 
     physics_time_left = std::min(physics_time_left + frame_dt, 0.1f);
@@ -305,11 +295,11 @@ void idle()
 
     if (now - fps_start_time >= 1000)
     {
-        std::cout << "FPS: " << frame_count
-                  << ", physics: " << physics_time_ms / frame_count
-                  << " ms, shells: " << shell_time_ms / frame_count
-                  << " ms, fins: " << fin_time_ms / frame_count << " ms"
-                  << std::endl;
+        // std::cout << "FPS: " << frame_count
+        //           << ", physics: " << physics_time_ms / frame_count
+        //           << " ms, shells: " << shell_time_ms / frame_count
+        //           << " ms, fins: " << fin_time_ms / frame_count << " ms"
+        //           << std::endl;
         frame_count = 0;
         physics_time_ms = 0.0;
         shell_time_ms = 0.0;
@@ -336,17 +326,18 @@ void keyboard(unsigned char key, int, int)
     else if (key == 'w')
         wind_on = !wind_on;
     else if (key == ',')
-        wind_strength = std::max(wind_strength - 2.0f, 0.0f);
+        windStrength = std::max(windStrength - 2.0f, 0.0f);
     else if (key == '.')
-        wind_strength = std::min(wind_strength + 2.0f, 60.0f);
+        windStrength = std::min(windStrength + 2.0f, 60.0f);
     else
         return;
-    std::cout << "shells: " << shell_count << ", length: " << fur_length
-              << ", density: " << strand_density
-              << ", fins: " << (show_fins ? "on" : "off")
-              << ", swing: " << (swinging ? "on" : "off")
-              << ", wind: " << (wind_on ? "on" : "off") << " (" << wind_strength
-              << ")" << std::endl;
+    // std::cout << "shells: " << shell_count << ", length: " << fur_length
+    //           << ", density: " << strand_density
+    //           << ", fins: " << (show_fins ? "on" : "off")
+    //           << ", swing: " << (swinging ? "on" : "off")
+    //           << ", wind: " << (wind_on ? "on" : "off") << " (" <<
+    //           windStrength
+    //           << ")" << std::endl;
 }
 
 void arrow(int key, bool held)
@@ -359,8 +350,8 @@ void arrow(int key, bool held)
         up_held = held;
     else if (key == GLUT_KEY_DOWN)
         down_held = held;
-    if ((key == GLUT_KEY_UP || key == GLUT_KEY_DOWN) && !held)
-        std::cout << "length: " << fur_length << std::endl;
+    // if ((key == GLUT_KEY_UP || key == GLUT_KEY_DOWN) && !held)
+    //     std::cout << "length: " << fur_length << std::endl;
 }
 
 void arrow_down(int key, int, int)
@@ -402,7 +393,7 @@ bool init_glew()
 
 void init_GL()
 {
-    std::cout << "GPU: " << glGetString(GL_RENDERER) << std::endl;
+    // std::cout << "GPU: " << glGetString(GL_RENDERER) << std::endl;
     glPointSize(0.1f);
     TEST_OPENGL_ERROR();
     glEnable(GL_DEPTH_TEST);
