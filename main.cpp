@@ -164,9 +164,9 @@ const float spring_strength = 1.2f;
 // bouncing, less than 1 = it bounces a bit before it stops
 const float damping_ratio = 0.6f;
 // wind (w): strongest push of a gust, in units per second squared (the
-// gravity is 9.81)
+// gravity is 9.81), changed with ',' and '.'
 bool wind_on = true;
-const float wind_strength = 16.0f;
+float wind_strength = 16.0f;
 float physics_time = 0.0f;
 // fixed time step: the simulation does not depend on the FPS
 const float physics_step = 1.0f / 240.0f;
@@ -184,8 +184,8 @@ bool down_held = false;
 const float growth_speed = 0.7f; // the length is multiplied by e^0.7 per second
 int last_frame_time = 0;
 
-// the model can swing from the left to the right of the screen (m), to show
-// the inertia of the strands. On by default for the ball
+// the model can swing from the left to the right of the screen (t), to show
+// the inertia of the strands. Off by default
 bool swinging = false;
 float swing_time = 0.0f;
 const float swing_width = 0.35f; // distance from the center to each side
@@ -203,7 +203,7 @@ double shell_time_ms = 0.0;
 double fin_time_ms = 0.0;
 
 // model matrix: the model turns around the vertical axis (left / right
-// arrows) and swings from the left to the right of the screen (m)
+// arrows) and swings from the left to the right of the screen (t)
 void set_model_matrix(GLuint program)
 {
     float c = std::cos(rotation);
@@ -388,17 +388,22 @@ void keyboard(unsigned char key, int, int)
         strand_density /= 1.1f;
     else if (key == 'f')
         show_fins = !show_fins;
-    else if (key == 'm')
+    else if (key == 't')
         swinging = !swinging;
     else if (key == 'w')
         wind_on = !wind_on;
+    else if (key == ',')
+        wind_strength = std::max(wind_strength - 2.0f, 0.0f);
+    else if (key == '.')
+        wind_strength = std::min(wind_strength + 2.0f, 60.0f);
     else
         return;
     std::cout << "shells: " << shell_count << ", length: " << fur_length
               << ", density: " << strand_density
               << ", fins: " << (show_fins ? "on" : "off")
               << ", swing: " << (swinging ? "on" : "off")
-              << ", wind: " << (wind_on ? "on" : "off") << std::endl;
+              << ", wind: " << (wind_on ? "on" : "off") << " (" << wind_strength
+              << ")" << std::endl;
 }
 
 // left / right: the model turns, up / down: the fur grows or shrinks, while
@@ -645,7 +650,6 @@ int main(int argc, char* argv[])
         // more strands, so they are thinner: long strands on a small ball
         // get wider toward the tip (the shells are bigger than the skin)
         strand_density = 400.0f;
-        swinging = true;
     }
     else
         load_bunny();
