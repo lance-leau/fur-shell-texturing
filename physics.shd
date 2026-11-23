@@ -33,8 +33,43 @@ uniform float fur_length;
 uniform float dt; // time step, always the same
 uniform float stiffness; // strength of the spring that keeps the strand up
 uniform float damping; // part of the speed kept from one step to the next
+uniform float time; // seconds of simulation, moves the wind gusts
+uniform float wind_strength; // 0 when the wind is off
 
 const vec3 gravity = vec3(0.0, -9.81, 0.0);
+// the wind blows toward the right of the screen (camera right direction)
+const vec3 wind_direction = normalize(vec3(1.0, 0.0, -1.0));
+const float wind_speed = 1.5; // how fast the gusts travel, units per second
+const float gust_size = 0.3; // size of a gust, in world units
+
+// pseudo random number in [0, 1[ for a point of the integer grid
+float hash(vec3 p)
+{
+    return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+}
+
+// smooth noise in [0, 1]: a random value on each corner of a grid, blended
+// between the corners (value noise, a simpler cousin of Perlin noise)
+float noise(vec3 p)
+{
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    // smooth blend, so the grid cannot be seen
+    f = f * f * (3.0 - 2.0 * f);
+    float x00 = mix(hash(i), hash(i + vec3(1, 0, 0)), f.x);
+    float x10 = mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x);
+    float x01 = mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x);
+    float x11 = mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+
+// the noise pattern is carried by the wind: strong and calm zones (gusts)
+// travel across the fur. Squared, so the calm zones are really calm
+vec3 wind(vec3 p)
+{
+    float gust = noise((p - wind_direction * wind_speed * time) / gust_size);
+    return wind_direction * wind_strength * gust * gust;
+}
 
 void main()
 {
@@ -57,8 +92,8 @@ void main()
     vec3 previous = strands[i].previous.xyz;
 
     // forces: a spring pulls the tip back to its rest position, the gravity
-    // pulls it down
-    vec3 acceleration = stiffness * (rest - tip) + gravity;
+    // pulls it down, the wind pushes it
+    vec3 acceleration = stiffness * (rest - tip) + gravity + wind(tip);
 
     // Verlet integration: the speed is (tip - previous) / dt, so the tip keeps
     // going the way it was going (inertia), a bit slower each step (damping)

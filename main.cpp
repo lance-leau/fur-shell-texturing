@@ -163,6 +163,11 @@ const float spring_strength = 1.2f;
 // damping ratio of the spring: 1 = the strand goes back to rest without
 // bouncing, less than 1 = it bounces a bit before it stops
 const float damping_ratio = 0.6f;
+// wind (w): strongest push of a gust, in units per second squared (the
+// gravity is 9.81)
+bool wind_on = true;
+const float wind_strength = 16.0f;
+float physics_time = 0.0f;
 // fixed time step: the simulation does not depend on the FPS
 const float physics_step = 1.0f / 240.0f;
 float physics_time_left = 0.0f;
@@ -269,6 +274,8 @@ void simulate()
     glUniform1f(glGetUniformLocation(physics_program_id, "stiffness"),
                 stiffness);
     glUniform1f(glGetUniformLocation(physics_program_id, "damping"), damping);
+    glUniform1f(glGetUniformLocation(physics_program_id, "wind_strength"),
+                wind_on ? wind_strength : 0.0f);
     TEST_OPENGL_ERROR();
 
     // after a freeze (window moved...), do not try to catch up on everything
@@ -276,11 +283,14 @@ void simulate()
     glBeginQuery(GL_TIME_ELAPSED, physics_time_query);
     while (physics_time_left >= physics_step)
     {
+        glUniform1f(glGetUniformLocation(physics_program_id, "time"),
+                    physics_time);
         // one invocation per vertex, in groups of 64
         glDispatchCompute((vertex_count + 63) / 64, 1, 1);
         // the next step (and the draw) must see what this step wrote
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         physics_time_left -= physics_step;
+        physics_time += physics_step;
     }
     glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
@@ -380,12 +390,15 @@ void keyboard(unsigned char key, int, int)
         show_fins = !show_fins;
     else if (key == 'm')
         swinging = !swinging;
+    else if (key == 'w')
+        wind_on = !wind_on;
     else
         return;
     std::cout << "shells: " << shell_count << ", length: " << fur_length
               << ", density: " << strand_density
               << ", fins: " << (show_fins ? "on" : "off")
-              << ", swing: " << (swinging ? "on" : "off") << std::endl;
+              << ", swing: " << (swinging ? "on" : "off")
+              << ", wind: " << (wind_on ? "on" : "off") << std::endl;
 }
 
 // left / right: the model turns, up / down: the fur grows or shrinks, while
