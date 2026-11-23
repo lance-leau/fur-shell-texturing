@@ -3,8 +3,6 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normalSmooth;
 
-// the tip of each strand, moved by the compute shader (physics.shd), in
-// world space. With an index buffer, gl_VertexID is the index of the vertex
 struct Strand
 {
     vec4 tip;
@@ -24,17 +22,13 @@ out vec3 v_root;
 out vec3 v_skin_normal;
 out vec3 v_normal;
 out float v_height;
-// for the fins (geometry shader): the root in world space and the tip of the
-// strand in clip space
 out vec3 v_world;
 out vec4 v_tip;
 
-// the camera (the model view matrix of the TP)
 mat4 view_matrix = mat4(0.57735, -0.33333, 0.57735, 0.00000, 0.00000, 0.66667,
                         0.57735, 0.00000, -0.57735, -0.33333, 0.57735, 0.00000,
                         0.00000, 0.00000, -17, 1.00000);
 
-// zoomed in compared to the TP (24 instead of 15) to see the fur
 mat4 projection_matrix = mat4(
     24.00000, 0.00000, 0.00000, 0.00000, 0.00000, 24.00000, 0.00000, 0.00000,
     0.00000, 0.00000, -1.00020, -1.00000, 0.00000, 0.00000, -10.00100, 0.00000);

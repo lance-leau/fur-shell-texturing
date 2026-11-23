@@ -1,7 +1,5 @@
-// clang-format off
-#include <GL/glew.h> // glew doit etre tout en haut
-// clang-format on
 #include <GL/freeglut.h>
+#include <GL/glew.h> // glew doit etre tout en haut
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -26,14 +24,10 @@ GLuint program_id;
 GLuint fin_program_id;
 GLuint physics_program_id;
 
-// the mesh that gets the fur: the bunny, or a sphere with --ball
 std::vector<GLfloat> mesh_positions;
 std::vector<GLfloat> mesh_normals;
 std::vector<GLuint> mesh_indices;
 
-// the bunny is a triangle soup: a vertex is repeated in every triangle that
-// uses it. The identical vertices are merged and drawn with an index buffer,
-// so the vertex shader runs about 6 times less.
 void load_bunny()
 {
     std::map<std::array<GLfloat, 6>, GLuint> vertex_index;
@@ -61,10 +55,6 @@ void load_bunny()
               << mesh_positions.size() / 3 << " unique" << std::endl;
 }
 
-// a sphere centered like the bunny (center (0, 0.5, 0)): a vertex on each
-// pole and rings of vertices in between. The last vertex of a
-// ring is linked to the first one (no copy on the seam), so the mesh is
-// closed: every edge has 2 triangles, as the fins need.
 void make_sphere(int rings, int segments, float radius)
 {
     const float pi = 3.14159265f;
@@ -118,9 +108,6 @@ void make_sphere(int rings, int segments, float radius)
               << mesh_indices.size() / 3 << " triangles" << std::endl;
 }
 
-// the edges of the mesh for the fins, 4 indices per edge for
-// GL_LINES_ADJACENCY: the opposite vertex of the 1st triangle, the 2 vertices
-// of the edge, the opposite vertex of the 2nd triangle
 std::vector<GLuint> edge_indices;
 
 void find_edges()
@@ -150,49 +137,34 @@ void find_edges()
     std::cout << "fins: " << edge_indices.size() / 4 << " edges" << std::endl;
 }
 
-// fur parameters
 int shell_count = 64;
 float fur_length = 0.05f;
 float strand_density = 250.0f;
 bool show_fins = true;
 
-// strand physics (compute shader): a spring keeps the strands up. At full
-// bend, the spring pulls with stiffness * fur_length: 1.2 times the gravity,
-// so a strand that points up still stands, but the others bend a lot.
 const float spring_strength = 1.2f;
-// damping ratio of the spring: 1 = the strand goes back to rest without
-// bouncing, less than 1 = it bounces a bit before it stops
 const float damping_ratio = 0.6f;
-// wind (w): strongest push of a gust, in units per second squared (the
-// gravity is 9.81), changed with ',' and '.'
 bool wind_on = true;
 float wind_strength = 16.0f;
 float physics_time = 0.0f;
-// fixed time step: the simulation does not depend on the FPS
 const float physics_step = 1.0f / 240.0f;
 float physics_time_left = 0.0f;
 float frame_dt = 0.0f;
 
-// angle of the model around the vertical axis, turned with left / right
 float rotation = 0.0f;
 const float rotation_speed = 2.0f; // radians per second
 bool left_held = false;
 bool right_held = false;
-// up / down: longer / shorter fur
 bool up_held = false;
 bool down_held = false;
 const float growth_speed = 0.7f; // the length is multiplied by e^0.7 per second
 int last_frame_time = 0;
 
-// the model can swing from the left to the right of the screen (t), to show
-// the inertia of the strands. Off by default
 bool swinging = false;
 float swing_time = 0.0f;
 const float swing_width = 0.35f; // distance from the center to each side
 const float swing_period = 2.0f; // seconds for a full left-right-left
 
-// FPS counter and GPU time of the physics, the shells and the fins, printed
-// every second
 int frame_count = 0;
 int fps_start_time = 0;
 GLuint physics_time_query;
@@ -202,8 +174,6 @@ double physics_time_ms = 0.0;
 double shell_time_ms = 0.0;
 double fin_time_ms = 0.0;
 
-// model matrix: the model turns around the vertical axis (left / right
-// arrows) and swings from the left to the right of the screen (t)
 void set_model_matrix(GLuint program)
 {
     float c = std::cos(rotation);
@@ -239,7 +209,6 @@ void update_uniforms(GLuint program)
     TEST_OPENGL_ERROR();
 }
 
-// waits for the GPU to give the time of a query, in ms (simple, but it syncs)
 double query_time_ms(GLuint query)
 {
     GLuint64 elapsed_ns;
@@ -254,7 +223,6 @@ void window_resize(int width, int height)
     TEST_OPENGL_ERROR();
 }
 
-// moves the strands by as many fixed steps as the time of the last frame
 void simulate()
 {
     glUseProgram(physics_program_id);
@@ -406,8 +374,6 @@ void keyboard(unsigned char key, int, int)
               << ")" << std::endl;
 }
 
-// left / right: the model turns, up / down: the fur grows or shrinks, while
-// the arrow is held down
 void arrow(int key, bool held)
 {
     if (key == GLUT_KEY_LEFT)
@@ -475,7 +441,6 @@ void init_GL()
     TEST_OPENGL_ERROR();
 }
 
-// a buffer is only memory: the target used to fill it does not matter
 GLuint create_buffer(size_t size, const void* data)
 {
     GLuint buffer_id;
@@ -486,8 +451,6 @@ GLuint create_buffer(size_t size, const void* data)
     return buffer_id;
 }
 
-// a VAO with the positions (location 0), the normals (location 1) and the
-// given index buffer (remembered by the VAO)
 GLuint create_vao(GLuint position_vbo, GLuint normal_vbo, GLuint index_buffer)
 {
     GLuint vao_id;
@@ -505,7 +468,6 @@ GLuint create_vao(GLuint position_vbo, GLuint normal_vbo, GLuint index_buffer)
     return vao_id;
 }
 
-// the shells and the fins use the same vertices, with different indices
 void init_object_vbo()
 {
     GLuint position_vbo = create_buffer(mesh_positions.size() * sizeof(GLfloat),
@@ -562,7 +524,6 @@ std::string load(const std::string& filename)
     return file_content;
 }
 
-// compiles one shader and prints its errors
 GLuint compile_shader(GLenum type, const std::string& filename)
 {
     std::string source = load(filename);
@@ -582,8 +543,6 @@ GLuint compile_shader(GLenum type, const std::string& filename)
     return shader;
 }
 
-// links a program from a vertex shader, an optional geometry shader (empty
-// name for none) and a fragment shader
 GLuint create_program(const std::string& vertex, const std::string& geometry,
                       const std::string& fragment)
 {
@@ -605,7 +564,6 @@ GLuint create_program(const std::string& vertex, const std::string& geometry,
     return program;
 }
 
-// a compute shader is alone in its program
 GLuint create_compute_program(const std::string& compute)
 {
     GLuint program = glCreateProgram();

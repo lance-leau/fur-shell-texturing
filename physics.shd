@@ -1,10 +1,7 @@
 #version 450
 
-// one invocation per vertex of the mesh: it moves the tip of the strand that
-// grows on this vertex, by one time step
 layout(local_size_x = 64) in;
 
-// the VBOs of the mesh, read as arrays of floats (x, y, z, x, y, z, ...)
 layout(std430, binding = 0) readonly buffer positions_buffer
 {
     float positions[];
@@ -15,7 +12,6 @@ layout(std430, binding = 1) readonly buffer normals_buffer
     float normals[];
 };
 
-// the tip of each strand now and one step before, in world space (w unused)
 struct Strand
 {
     vec4 tip;
@@ -37,19 +33,15 @@ uniform float time; // seconds of simulation, moves the wind gusts
 uniform float wind_strength; // 0 when the wind is off
 
 const vec3 gravity = vec3(0.0, -9.81, 0.0);
-// the wind blows toward the right of the screen (camera right direction)
 const vec3 wind_direction = normalize(vec3(1.0, 0.0, -1.0));
 const float wind_speed = 1.5; // how fast the gusts travel, units per second
 const float gust_size = 0.3; // size of a gust, in world units
 
-// pseudo random number in [0, 1[ for a point of the integer grid
 float hash(vec3 p)
 {
     return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 }
 
-// smooth noise in [0, 1]: a random value on each corner of a grid, blended
-// between the corners (value noise, a simpler cousin of Perlin noise)
 float noise(vec3 p)
 {
     vec3 i = floor(p);
@@ -63,8 +55,6 @@ float noise(vec3 p)
     return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
 }
 
-// the noise pattern is carried by the wind: strong and calm zones (gusts)
-// travel across the fur. Squared, so the calm zones are really calm
 vec3 wind(vec3 p)
 {
     float gust = noise((p - wind_direction * wind_speed * time) / gust_size);

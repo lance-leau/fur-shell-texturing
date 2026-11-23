@@ -1,9 +1,6 @@
 #version 450
 
-// one edge of the bunny with its 2 triangles: 0 = opposite vertex of the 1st
-// triangle, 1 and 2 = the edge, 3 = opposite vertex of the 2nd triangle
 layout(lines_adjacency) in;
-// a fin is a quad: a strip of 2 triangles
 layout(triangle_strip, max_vertices = 4) out;
 
 in vec3 v_world[];
@@ -16,12 +13,9 @@ out vec2 f_coord; // x: along the edge (1 unit = 1 strand), y: height 0 to 1
 out vec3 f_normal;
 out float f_fade;
 
-// the camera position in world space (from the model view matrix)
 const vec3 eye = vec3(9.815, 9.815, 9.815);
-// edges close to the silhouette get a fin too, so the fins do not pop
 const float silhouette_margin = 0.2;
 
-// normal of the triangle (a, b, c), on the same side as the normal n
 vec3 triangle_normal(vec3 a, vec3 b, vec3 c, vec3 n)
 {
     vec3 normal = normalize(cross(b - a, c - a));

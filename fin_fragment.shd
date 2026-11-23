@@ -6,14 +6,12 @@ in float f_fade;
 
 layout(location = 0) out vec4 output_color;
 
-// same look as the shells (fragment.shd)
 const vec3 light_dir = normalize(vec3(1.0, 1.5, 0.5));
 const float light_power = 1.3;
 const vec3 view_dir = normalize(vec3(1.0, 1.0, 1.0));
 const vec3 root_color = vec3(0.45, 0.33, 0.24);
 const vec3 tip_color = vec3(0.95, 0.86, 0.72);
 
-// pseudo random number in [0, 1[
 float hash(float x)
 {
     return fract(sin(x * 12.9898) * 43758.5453);

@@ -11,21 +11,15 @@ layout(location = 0) out vec4 output_color;
 
 const vec3 light_dir = normalize(vec3(1.0, 1.5, 0.5));
 const float light_power = 1.3;
-// the camera looks at the bunny from (1, 1, 1)
 const vec3 view_dir = normalize(vec3(1.0, 1.0, 1.0));
 const vec3 root_color = vec3(0.45, 0.33, 0.24);
 const vec3 tip_color = vec3(0.95, 0.86, 0.72);
 
-// pseudo random number in [0, 1[ for a cell of the grid
 float hash(vec3 cell)
 {
     return fract(sin(dot(cell, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 }
 
-// 2D coordinates on the skin: the root is projected on the plane (yz, xz or
-// xy) that faces the normal the most. The z of the result tells which plane.
-// slope: the normal projected on this plane (its length is sin(tilt))
-// cos_tilt: cosine of the angle between the normal and the axis of the plane
 vec3 skin_coordinates(out vec2 slope, out float cos_tilt)
 {
     vec3 n = normalize(v_skin_normal);
