@@ -9,7 +9,7 @@ in vec4 v_tip[];
 
 uniform float strand_density;
 
-out vec2 f_coord; // x: along the edge (1 unit = 1 strand), y: height 0 to 1
+out vec2 f_coord;
 out vec3 f_normal;
 out float f_fade;
 
@@ -38,19 +38,16 @@ void main()
     vec3 n = normalize(v_normal[1] + v_normal[2]);
     vec3 to_eye = normalize(eye - 0.5 * (a + b));
 
-    // on the silhouette, one triangle faces the camera and the other does not
     float d1 = dot(triangle_normal(a, b, v_world[0], n), to_eye);
     float d2 = dot(triangle_normal(a, b, v_world[3], n), to_eye);
     if (d1 * d2 > 0.0 && min(abs(d1), abs(d2)) > silhouette_margin)
         return;
 
-    // the fin fades in as it turns to face the camera (Lengyel 2001)
     vec3 fin_normal = normalize(cross(b - a, n));
     float fade = 2.0 * abs(dot(fin_normal, to_eye)) - 1.0;
     if (fade <= 0.0)
         return;
 
-    // each edge starts at a different place of the strand pattern
     float start = float(gl_PrimitiveIDIn % 1000) * 17.0;
     float end = start + length(b - a) * strand_density;
 

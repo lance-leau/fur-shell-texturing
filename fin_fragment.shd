@@ -19,14 +19,12 @@ float hash(float x)
 
 void main()
 {
-    // the fin is cut in vertical strips, each strip holds one strand
     float cell = floor(f_coord.x);
     float local = fract(f_coord.x) - 0.5;
     float strand_length = mix(0.1, 1.0, hash(cell + 13.0));
     float t = f_coord.y / strand_length;
     float radius = 0.3 * sqrt(max(1.0 - t, 0.0));
 
-    // while the fin fades in, only some of its strands are drawn
     if (hash(cell + 3.0) > f_fade || abs(local) > radius)
         discard;
 

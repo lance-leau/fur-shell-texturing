@@ -26,16 +26,16 @@ layout(std430, binding = 2) buffer strands_buffer
 uniform uint vertex_count;
 uniform mat4 model_matrix;
 uniform float fur_length;
-uniform float dt; // time step, always the same
-uniform float stiffness; // strength of the spring that keeps the strand up
-uniform float damping; // part of the speed kept from one step to the next
-uniform float time; // seconds of simulation, moves the wind gusts
-uniform float wind_strength; // 0 when the wind is off
+uniform float dt;
+uniform float stiffness;
+uniform float damping;
+uniform float time;
+uniform float wind_strength;
 
 const vec3 gravity = vec3(0.0, -9.81, 0.0);
 const vec3 wind_direction = normalize(vec3(1.0, 0.0, -1.0));
-const float wind_speed = 1.5; // how fast the gusts travel, units per second
-const float gust_size = 0.3; // size of a gust, in world units
+const float wind_speed = 1.5;
+const float gust_size = 0.3;
 
 float hash(vec3 p)
 {
@@ -46,7 +46,6 @@ float noise(vec3 p)
 {
     vec3 i = floor(p);
     vec3 f = fract(p);
-    // smooth blend, so the grid cannot be seen
     f = f * f * (3.0 - 2.0 * f);
     float x00 = mix(hash(i), hash(i + vec3(1, 0, 0)), f.x);
     float x10 = mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x);
@@ -64,7 +63,6 @@ vec3 wind(vec3 p)
 void main()
 {
     uint i = gl_GlobalInvocationID.x;
-    // the last group of 64 goes past the end of the mesh
     if (i >= vertex_count)
         return;
 
@@ -72,8 +70,6 @@ void main()
         vec3(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
     vec3 normal = vec3(normals[3 * i], normals[3 * i + 1], normals[3 * i + 2]);
 
-    // the root follows the model. At rest, the strand goes straight out of
-    // the skin
     vec3 root = (model_matrix * vec4(position, 1.0)).xyz;
     vec3 n = normalize(mat3(model_matrix) * normal);
     vec3 rest = root + n * fur_length;
@@ -81,19 +77,13 @@ void main()
     vec3 tip = strands[i].tip.xyz;
     vec3 previous = strands[i].previous.xyz;
 
-    // forces: a spring pulls the tip back to its rest position, the gravity
-    // pulls it down, the wind pushes it
     vec3 acceleration = stiffness * (rest - tip) + gravity + wind(tip);
 
-    // Verlet integration: the speed is (tip - previous) / dt, so the tip keeps
-    // going the way it was going (inertia), a bit slower each step (damping)
     vec3 next = tip + (tip - previous) * damping + acceleration * dt * dt;
 
-    // the tip does not go under the skin
     float height = dot(next - root, n);
     if (height < 0.0)
         next -= height * n;
-    // the strand keeps its length
     next = root + normalize(next - root) * fur_length;
 
     strands[i].previous = vec4(tip, 0.0);

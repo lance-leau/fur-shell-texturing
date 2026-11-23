@@ -35,12 +35,8 @@ mat4 projection_matrix = mat4(
 
 void main()
 {
-    // height of the shell: 0 on the skin, 1 at the tip of the fur
     float h = float(gl_InstanceID) / float(max(shell_count - 1, 1));
 
-    // the strand leaves the skin along the normal, then bends toward the
-    // simulated tip: a quadratic Bezier curve (root, middle, tip). The shell
-    // is at h on this curve
     vec3 root = (model_matrix * vec4(position, 1.0)).xyz;
     vec3 normal = normalize(mat3(model_matrix) * normalSmooth);
     vec3 middle = root + normal * fur_length * 0.5;
@@ -51,10 +47,8 @@ void main()
     mat4 view_projection = projection_matrix * view_matrix;
     gl_Position = view_projection * vec4(p, 1.0);
 
-    // position on the skin, so every shell sees the same strands
     v_root = position;
     v_skin_normal = normalSmooth;
-    // the light does not turn with the model
     v_normal = normal;
     v_height = h;
 

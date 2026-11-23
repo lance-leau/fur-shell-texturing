@@ -1,5 +1,6 @@
+#include <GL/glew.h>
+
 #include <GL/freeglut.h>
-#include <GL/glew.h> // glew doit etre tout en haut
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -40,7 +41,6 @@ void load_bunny()
                                           normal_smooth_buffer_data[i + 1],
                                           normal_smooth_buffer_data[i + 2] };
         GLuint new_index = mesh_positions.size() / 3;
-        // insert does nothing if the vertex is already known
         auto result = vertex_index.insert({ vertex, new_index });
         mesh_indices.push_back(result.first->second);
         if (result.second)
@@ -58,7 +58,6 @@ void load_bunny()
 void make_sphere(int rings, int segments, float radius)
 {
     const float pi = 3.14159265f;
-    // direction from the center, which is also the normal
     auto add_vertex = [radius](float x, float y, float z) {
         mesh_positions.insert(mesh_positions.end(),
                               { radius * x, 0.5f + radius * y, radius * z });
@@ -67,7 +66,6 @@ void make_sphere(int rings, int segments, float radius)
     auto add_triangle = [](GLuint a, GLuint b, GLuint c) {
         mesh_indices.insert(mesh_indices.end(), { a, b, c });
     };
-    // index of the vertex j of the ring i (rings 1 to rings - 1)
     auto ring_vertex = [segments](int i, int j) {
         return GLuint(1 + (i - 1) * segments + j % segments);
     };
@@ -75,7 +73,7 @@ void make_sphere(int rings, int segments, float radius)
     add_vertex(0.0f, 1.0f, 0.0f);
     for (int i = 1; i < rings; i++)
     {
-        float theta = pi * i / rings; // angle from the north pole
+        float theta = pi * i / rings;
         for (int j = 0; j < segments; j++)
         {
             float phi = 2.0f * pi * j / segments;
@@ -86,7 +84,6 @@ void make_sphere(int rings, int segments, float radius)
     add_vertex(0.0f, -1.0f, 0.0f);
     GLuint south = mesh_positions.size() / 3 - 1;
 
-    // counter clockwise seen from outside, so the back faces are culled
     for (int j = 0; j < segments; j++)
         add_triangle(0, ring_vertex(1, j + 1), ring_vertex(1, j));
     for (int i = 1; i < rings - 1; i++)
@@ -112,7 +109,6 @@ std::vector<GLuint> edge_indices;
 
 void find_edges()
 {
-    // edge (smallest index, biggest index) -> opposite vertices
     std::map<std::pair<GLuint, GLuint>, std::vector<GLuint>> opposite;
     for (size_t i = 0; i < mesh_indices.size(); i += 3)
     {
@@ -126,7 +122,6 @@ void find_edges()
     }
     for (auto& edge : opposite)
     {
-        // an edge on a hole of the mesh has only one triangle: no fin
         if (edge.second.size() != 2)
             continue;
         edge_indices.push_back(edge.second[0]);
@@ -152,18 +147,18 @@ float physics_time_left = 0.0f;
 float frame_dt = 0.0f;
 
 float rotation = 0.0f;
-const float rotation_speed = 2.0f; // radians per second
+const float rotation_speed = 2.0f;
 bool left_held = false;
 bool right_held = false;
 bool up_held = false;
 bool down_held = false;
-const float growth_speed = 0.7f; // the length is multiplied by e^0.7 per second
+const float growth_speed = 0.7f;
 int last_frame_time = 0;
 
 bool swinging = false;
 float swing_time = 0.0f;
-const float swing_width = 0.35f; // distance from the center to each side
-const float swing_period = 2.0f; // seconds for a full left-right-left
+const float swing_width = 0.35f;
+const float swing_period = 2.0f;
 
 int frame_count = 0;
 int fps_start_time = 0;
@@ -178,20 +173,12 @@ void set_model_matrix(GLuint program)
 {
     float c = std::cos(rotation);
     float s = std::sin(rotation);
-    // the swing moves the model along the right direction of the camera
-    // (first row of the view matrix): left and right on the screen
     float x =
         swing_width * std::sin(2.0f * 3.14159265f * swing_time / swing_period);
-    // column major, like OpenGL: one column per line. The last column is the
-    // translation: swing, and down by 0.5 to center the model (y from 0 to 1)
-    // clang-format off
-    GLfloat model[16] = {
-        c,            0.0f,  -s,            0.0f,
-        0.0f,         1.0f,  0.0f,          0.0f,
-        s,            0.0f,  c,             0.0f,
-        0.57735f * x, -0.5f, -0.57735f * x, 1.0f
-    };
-    // clang-format on
+    GLfloat model[16] = { c,    0.0f, -s,           0.0f,  0.0f,
+                          1.0f, 0.0f, 0.0f,         s,     0.0f,
+                          c,    0.0f, 0.57735f * x, -0.5f, -0.57735f * x,
+                          1.0f };
     glUniformMatrix4fv(glGetUniformLocation(program, "model_matrix"), 1,
                        GL_FALSE, model);
     TEST_OPENGL_ERROR();
@@ -234,9 +221,6 @@ void simulate()
                 fur_length);
     glUniform1f(glGetUniformLocation(physics_program_id, "dt"), physics_step);
     float stiffness = spring_strength * 9.81f / fur_length;
-    // the spring alone makes the tip swing at sqrt(stiffness) radians per
-    // second. A friction of 2 * damping_ratio * sqrt(stiffness) * speed gives
-    // the damping ratio: over one step, the speed is multiplied by damping
     float damping =
         std::exp(-2.0f * damping_ratio * std::sqrt(stiffness) * physics_step);
     glUniform1f(glGetUniformLocation(physics_program_id, "stiffness"),
@@ -246,16 +230,13 @@ void simulate()
                 wind_on ? wind_strength : 0.0f);
     TEST_OPENGL_ERROR();
 
-    // after a freeze (window moved...), do not try to catch up on everything
     physics_time_left = std::min(physics_time_left + frame_dt, 0.1f);
     glBeginQuery(GL_TIME_ELAPSED, physics_time_query);
     while (physics_time_left >= physics_step)
     {
         glUniform1f(glGetUniformLocation(physics_program_id, "time"),
                     physics_time);
-        // one invocation per vertex, in groups of 64
         glDispatchCompute((vertex_count + 63) / 64, 1, 1);
-        // the next step (and the draw) must see what this step wrote
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         physics_time_left -= physics_step;
         physics_time += physics_step;
@@ -271,25 +252,20 @@ void display()
 
     simulate();
 
-    // shells: one instance per shell, the vertex shader uses gl_InstanceID
     glUseProgram(program_id);
     update_uniforms(program_id);
     glBindVertexArray(mesh_vao_id);
-    // the GPU measures how long the draw call takes on its side
     glBeginQuery(GL_TIME_ELAPSED, shell_time_query);
     glDrawElementsInstanced(GL_TRIANGLES, mesh_indices.size(), GL_UNSIGNED_INT,
                             0, shell_count);
     glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
 
-    // fins: the geometry shader gets each edge with its 2 triangles and
-    // builds a fin on the edges of the silhouette
     if (show_fins)
     {
         glUseProgram(fin_program_id);
         update_uniforms(fin_program_id);
         glBindVertexArray(fin_vao_id);
-        // a fin can be seen from both sides
         glDisable(GL_CULL_FACE);
         glBeginQuery(GL_TIME_ELAPSED, fin_time_query);
         glDrawElements(GL_LINES_ADJACENCY, edge_indices.size(), GL_UNSIGNED_INT,
@@ -311,7 +287,6 @@ void display()
 
 void idle()
 {
-    // the rotation follows the real time, whatever the FPS
     int now = glutGet(GLUT_ELAPSED_TIME);
     frame_dt = (now - last_frame_time) / 1000.0f;
     last_frame_time = now;
@@ -400,7 +375,6 @@ void arrow_up(int key, int, int)
 
 void init_glut(int& argc, char* argv[])
 {
-    // glewExperimental = GL_TRUE;
     glutInit(&argc, argv);
     glutInitContextVersion(4, 5);
     glutInitContextProfile(GLUT_CORE_PROFILE | GLUT_DEBUG);
@@ -481,9 +455,6 @@ void init_object_vbo()
     mesh_vao_id = create_vao(position_vbo, normal_vbo, triangle_ibo);
     fin_vao_id = create_vao(position_vbo, normal_vbo, edge_ibo);
 
-    // the strands start at rest: straight out of the skin, in world space
-    // (the model is only moved down by 0.5 at the start). For each vertex:
-    // tip (x, y, z, w) then previous tip (x, y, z, w)
     std::vector<GLfloat> strands;
     for (size_t i = 0; i < mesh_positions.size(); i += 3)
     {
@@ -496,9 +467,6 @@ void init_object_vbo()
     GLuint strand_ssbo =
         create_buffer(strands.size() * sizeof(GLfloat), strands.data());
 
-    // the compute shader reads the mesh and moves the strands, the vertex
-    // shader reads the strands: the buffers are bound to the binding points
-    // of the shaders
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, position_vbo);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, normal_vbo);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, strand_ssbo);
@@ -594,19 +562,15 @@ int main(int argc, char* argv[])
     glGenQueries(1, &physics_time_query);
     glGenQueries(1, &shell_time_query);
     glGenQueries(1, &fin_time_query);
-    // ./main --ball: a furry ball instead of the bunny
     bool ball = false;
     for (int i = 1; i < argc; i++)
         if (std::string(argv[i]) == "--ball")
             ball = true;
     if (ball)
     {
-        // a small ball with long fur: mostly a clump of strands
         make_sphere(64, 128, 0.12f);
         fur_length = 0.28f;
         shell_count = 192;
-        // more strands, so they are thinner: long strands on a small ball
-        // get wider toward the tip (the shells are bigger than the skin)
         strand_density = 400.0f;
     }
     else
