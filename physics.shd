@@ -39,9 +39,11 @@ const float gust_size = 0.3;
 
 float hash(vec3 p)
 {
+    // https://godotshaders.com/shader/a-magical-anomaly/
     return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
 }
 
+// create 3D noise for the wind
 float noise(vec3 p)
 {
     vec3 i = floor(p);
@@ -86,6 +88,7 @@ void main()
         next -= height * n;
     next = root + normalize(next - root) * fur_length;
 
+    // fill in the SSBO
     strands[i].previous = vec4(tip, 0.0);
     strands[i].tip = vec4(next, 0.0);
 }
