@@ -70,7 +70,7 @@ void main()
     diffuse *= diffuse;
     float occlusion = mix(0.5, 1.0, v_height);
     float tint = mix(0.7, 1.3, hash(cell + 29.0));
-    vec3 color = mix(root_color, tip_color, clamp(t, 0.0, 1.0)) * tint;
+    vec3 color = mix(root_color, tip_color, t) * tint;
     float rim = pow(1.0 - max(dot(n, view_dir), 0.0), 3.0);
 
     color = light_power * color * diffuse * occlusion

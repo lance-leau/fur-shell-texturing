@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <vector>
 
 #include "bunny.hh"
@@ -42,16 +43,15 @@ void load_bunny()
                                           normal_smooth_buffer_data[i],
                                           normal_smooth_buffer_data[i + 1],
                                           normal_smooth_buffer_data[i + 2] };
-        GLuint new_index = mesh_positions.size() / 3;
-        auto result = vertex_index.insert({ vertex, new_index });
-        mesh_indices.push_back(result.first->second);
-        if (result.second)
+        if (vertex_index.count(vertex) == 0)
         {
+            vertex_index[vertex] = mesh_positions.size() / 3;
             mesh_positions.insert(mesh_positions.end(), vertex.begin(),
                                   vertex.begin() + 3);
             mesh_normals.insert(mesh_normals.end(), vertex.begin() + 3,
                                 vertex.end());
         }
+        mesh_indices.push_back(vertex_index[vertex]);
     }
     // std::cout << "bunny: " << mesh_indices.size() << " vertices, "
     //           << mesh_positions.size() / 3 << " unique" << std::endl;
@@ -126,7 +126,6 @@ float strand_density = 250.0f;
 bool show_fins = true;
 const float spring_strength = 1.2f;
 const float damping_ratio = 0.6f;
-bool wind_on = true;
 float windStrength = 16.0f;
 float physics_time = 0.0f;
 const float physics_step = 1.0f / 240.0f;
@@ -140,14 +139,6 @@ bool swinging = false;
 float swing_time = 0.0f;
 const float swing_width = 0.35f;
 const float swing_period = 2.0f;
-int frame_count = 0;
-double physics_time_ms = 0.0;
-double shell_time_ms = 0.0;
-double fin_time_ms = 0.0;
-int fps_start_time = 0;
-GLuint physics_time_query;
-GLuint shell_time_query;
-GLuint fin_time_query;
 // kb controls
 bool left_held = false;
 bool right_held = false;
@@ -182,15 +173,6 @@ void update_uniforms(GLuint program)
     TEST_OPENGL_ERROR();
 }
 
-double query_time_ms(GLuint query)
-{
-    GLuint64 elapsed_ns;
-    TEST_OPENGL_ERROR();
-    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &elapsed_ns);
-    TEST_OPENGL_ERROR();
-    return elapsed_ns / 1e6;
-}
-
 void window_resize(int width, int height)
 {
     glViewport(0, 0, width, height);
@@ -217,11 +199,10 @@ void simulate()
     glUniform1f(glGetUniformLocation(physics_program_id, "damping"), damping);
     TEST_OPENGL_ERROR();
     glUniform1f(glGetUniformLocation(physics_program_id, "windStrength"),
-                wind_on ? windStrength : 0.0f);
+                windStrength);
     TEST_OPENGL_ERROR();
 
-    physics_time_left = std::min(physics_time_left + frame_dt, 0.1f);
-    glBeginQuery(GL_TIME_ELAPSED, physics_time_query);
+    physics_time_left += frame_dt;
     while (physics_time_left >= physics_step)
     {
         glUniform1f(glGetUniformLocation(physics_program_id, "time"),
@@ -231,7 +212,6 @@ void simulate()
         physics_time_left -= physics_step;
         physics_time += physics_step;
     }
-    glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
 }
 
@@ -243,36 +223,36 @@ void display()
     simulate();
 
     glUseProgram(program_id);
+    TEST_OPENGL_ERROR();
     update_uniforms(program_id);
+    TEST_OPENGL_ERROR();
     glBindVertexArray(mesh_vao_id);
-    glBeginQuery(GL_TIME_ELAPSED, shell_time_query);
+    TEST_OPENGL_ERROR();
     glDrawElementsInstanced(GL_TRIANGLES, mesh_indices.size(), GL_UNSIGNED_INT,
                             0, shell_count);
-    glEndQuery(GL_TIME_ELAPSED);
     TEST_OPENGL_ERROR();
 
     if (show_fins)
     {
         glUseProgram(fin_program_id);
+        TEST_OPENGL_ERROR();
         update_uniforms(fin_program_id);
+        TEST_OPENGL_ERROR();
         glBindVertexArray(fin_vao_id);
+        TEST_OPENGL_ERROR();
         glDisable(GL_CULL_FACE);
-        glBeginQuery(GL_TIME_ELAPSED, fin_time_query);
+        TEST_OPENGL_ERROR();
         glDrawElements(GL_LINES_ADJACENCY, edge_indices.size(), GL_UNSIGNED_INT,
                        0);
-        glEndQuery(GL_TIME_ELAPSED);
+        TEST_OPENGL_ERROR();
         glEnable(GL_CULL_FACE);
         TEST_OPENGL_ERROR();
     }
 
     glBindVertexArray(0);
+    TEST_OPENGL_ERROR();
     glutSwapBuffers();
-
-    physics_time_ms += query_time_ms(physics_time_query);
-    shell_time_ms += query_time_ms(shell_time_query);
-    if (show_fins)
-        fin_time_ms += query_time_ms(fin_time_query);
-    frame_count++;
+    TEST_OPENGL_ERROR();
 }
 
 void idle()
@@ -285,27 +265,16 @@ void idle()
     if (left_held)
         rotation -= rotation_speed * frame_dt;
     if (up_held)
-        fur_length =
-            std::min(fur_length * std::exp(growth_speed * frame_dt), 0.5f);
-    if (down_held)
-        fur_length =
-            std::max(fur_length * std::exp(-growth_speed * frame_dt), 0.01f);
+        fur_length *= std::exp(growth_speed * frame_dt);
+    if (down_held && fur_length > 0.01f)
+        fur_length *= std::exp(-growth_speed * frame_dt);
     if (swinging)
         swing_time += frame_dt;
-
-    if (now - fps_start_time >= 1000)
-    {
-        // std::cout << "FPS: " << frame_count
-        //           << ", physics: " << physics_time_ms / frame_count
-        //           << " ms, shells: " << shell_time_ms / frame_count
-        //           << " ms, fins: " << fin_time_ms / frame_count << " ms"
-        //           << std::endl;
-        frame_count = 0;
-        physics_time_ms = 0.0;
-        shell_time_ms = 0.0;
-        fin_time_ms = 0.0;
-        fps_start_time = now;
-    }
+    // std::cout << "FPS: " << frame_count
+    //           << ", physics: " << physics_time_ms / frame_count
+    //           << " ms, shells: " << shell_time_ms / frame_count
+    //           << " ms, fins: " << fin_time_ms / frame_count << " ms"
+    //           << std::endl;
     glutPostRedisplay();
 }
 
@@ -323,14 +292,10 @@ void keyboard(unsigned char key, int, int)
         show_fins = !show_fins;
     else if (key == 't')
         swinging = !swinging;
-    else if (key == 'w')
-        wind_on = !wind_on;
-    else if (key == ',')
-        windStrength = std::max(windStrength - 2.0f, 0.0f);
+    else if (key == ',' && windStrength > 0.0f)
+        windStrength -= 2.0f;
     else if (key == '.')
-        windStrength = std::min(windStrength + 2.0f, 60.0f);
-    else
-        return;
+        windStrength += 2.0f;
     // std::cout << "shells: " << shell_count << ", length: " << fur_length
     //           << ", density: " << strand_density
     //           << ", fins: " << (show_fins ? "on" : "off")
@@ -394,11 +359,7 @@ bool init_glew()
 void init_GL()
 {
     // std::cout << "GPU: " << glGetString(GL_RENDERER) << std::endl;
-    glPointSize(0.1f);
-    TEST_OPENGL_ERROR();
     glEnable(GL_DEPTH_TEST);
-    TEST_OPENGL_ERROR();
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     TEST_OPENGL_ERROR();
     glEnable(GL_CULL_FACE);
     TEST_OPENGL_ERROR();
@@ -466,78 +427,33 @@ void init_object_vbo()
 
 std::string load(const std::string& filename)
 {
-    std::ifstream input_src_file(filename, std::ios::in);
-    std::string ligne;
-    std::string file_content = "";
-    if (input_src_file.fail())
-    {
-        std::cerr << "FAIL\n";
-        return "";
-    }
-    while (getline(input_src_file, ligne))
-    {
-        file_content = file_content + ligne + "\n";
-    }
-    file_content += '\0';
-    input_src_file.close();
-    return file_content;
+    std::ifstream file(filename);
+    std::stringstream content;
+    content << file.rdbuf();
+    return content.str();
 }
 
-GLuint compile_shader(GLenum type, const std::string& filename)
+void add_shader(GLuint program, GLenum type, const std::string& filename)
 {
     std::string source = load(filename);
     const char* source_ptr = source.c_str();
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source_ptr, 0);
     glCompileShader(shader);
+    char log[4096] = "";
+    glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+    std::cerr << log;
+    glAttachShader(program, shader);
     TEST_OPENGL_ERROR();
-    GLint status;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-    if (status != GL_TRUE)
-    {
-        char log[4096];
-        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        std::cerr << filename << ": " << log << std::endl;
-    }
-    return shader;
 }
 
-GLuint create_program(const std::string& vertex, const std::string& geometry,
-                      const std::string& fragment)
+void link_program(GLuint program)
 {
-    GLuint program = glCreateProgram();
-    glAttachShader(program, compile_shader(GL_VERTEX_SHADER, vertex));
-    if (!geometry.empty())
-        glAttachShader(program, compile_shader(GL_GEOMETRY_SHADER, geometry));
-    glAttachShader(program, compile_shader(GL_FRAGMENT_SHADER, fragment));
     glLinkProgram(program);
+    char log[4096] = "";
+    glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+    std::cerr << log;
     TEST_OPENGL_ERROR();
-    GLint status;
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE)
-    {
-        char log[4096];
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::cerr << "link: " << log << std::endl;
-    }
-    return program;
-}
-
-GLuint create_compute_program(const std::string& compute)
-{
-    GLuint program = glCreateProgram();
-    glAttachShader(program, compile_shader(GL_COMPUTE_SHADER, compute));
-    glLinkProgram(program);
-    TEST_OPENGL_ERROR();
-    GLint status;
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
-    if (status != GL_TRUE)
-    {
-        char log[4096];
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::cerr << "link: " << log << std::endl;
-    }
-    return program;
 }
 
 int main(int argc, char* argv[])
@@ -546,18 +462,23 @@ int main(int argc, char* argv[])
     if (!init_glew())
         std::exit(-1);
     init_GL();
-    program_id = create_program("vertex.shd", "", "fragment.shd");
-    fin_program_id =
-        create_program("vertex.shd", "fin_geometry.shd", "fin_fragment.shd");
-    physics_program_id = create_compute_program("physics.shd");
-    glGenQueries(1, &physics_time_query);
-    glGenQueries(1, &shell_time_query);
-    glGenQueries(1, &fin_time_query);
-    bool ball = false;
-    for (int i = 1; i < argc; i++)
-        if (std::string(argv[i]) == "--ball")
-            ball = true;
-    if (ball)
+
+    program_id = glCreateProgram();
+    add_shader(program_id, GL_VERTEX_SHADER, "vertex.shd");
+    add_shader(program_id, GL_FRAGMENT_SHADER, "fragment.shd");
+    link_program(program_id);
+
+    fin_program_id = glCreateProgram();
+    add_shader(fin_program_id, GL_VERTEX_SHADER, "vertex.shd");
+    add_shader(fin_program_id, GL_GEOMETRY_SHADER, "fin_geometry.shd");
+    add_shader(fin_program_id, GL_FRAGMENT_SHADER, "fin_fragment.shd");
+    link_program(fin_program_id);
+
+    physics_program_id = glCreateProgram();
+    add_shader(physics_program_id, GL_COMPUTE_SHADER, "physics.shd");
+    link_program(physics_program_id);
+
+    if (argc > 1 && std::string(argv[1]) == "--ball")
     {
         make_sphere(64, 128, 0.12f);
         fur_length = 0.28f;

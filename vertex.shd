@@ -35,7 +35,7 @@ mat4 projection_matrix = mat4(
 
 void main()
 {
-    float h = float(gl_InstanceID) / float(max(shell_count - 1, 1));
+    float h = float(gl_InstanceID) / float(shell_count - 1);
 
     vec3 root = (model_matrix * vec4(position, 1.0)).xyz;
     vec3 normal = normalize(mat3(model_matrix) * normalSmooth);

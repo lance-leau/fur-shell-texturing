@@ -19,7 +19,9 @@ const float silhouette_margin = 0.2;
 vec3 triangle_normal(vec3 a, vec3 b, vec3 c, vec3 n)
 {
     vec3 normal = normalize(cross(b - a, c - a));
-    return dot(normal, n) < 0.0 ? -normal : normal;
+    if (dot(normal, n) < 0.0)
+        normal = -normal;
+    return normal;
 }
 
 void emit(vec4 position, vec2 coord, vec3 normal, float fade)
